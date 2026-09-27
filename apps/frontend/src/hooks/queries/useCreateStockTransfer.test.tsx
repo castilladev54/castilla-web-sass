@@ -5,7 +5,15 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { productKeys, transferProductKeys } from './useProductQueries';
 import { stockTransferKeys, useCreateStockTransfer } from './useStockTransferQueries';
 import { api as API } from '../../api/axiosClient';
-import type { CreateStockTransferDTO } from '@inventory/shared';
+import type {
+  BranchId,
+  ProductId,
+  CreateStockTransferDTO,
+} from '@inventory/shared';
+
+const sourceBranchId = 'branch-A' as BranchId;
+const destinationBranchId = 'branch-B' as BranchId;
+const productId = 'product-1' as ProductId;
 
 vi.mock('../../api/axiosClient', () => ({
   api: {
@@ -22,22 +30,31 @@ describe('useCreateStockTransfer', () => {
         queries: { retry: false },
       },
     });
+
     vi.clearAllMocks();
   });
 
   const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      {children}
+    </QueryClientProvider>
   );
 
   it('debe enviar el payload a /transfers e invalidar origen y destino al tener éxito', async () => {
     const payload: CreateStockTransferDTO = {
-      sourceBranchId: 'branch-A',
-      destinationBranchId: 'branch-B',
-      items: [{ product_id: 'prod-1', quantity: '10' }],
+      sourceBranchId,
+      destinationBranchId,
+      items: [{ product_id: productId, quantity: '10' }],
     };
 
-    const mockResponse = { data: { success: true, transfer_id: 't-1' } };
-    (API.post as any).mockResolvedValueOnce(mockResponse);
+    const mockResponse = {
+      data: {
+        success: true,
+        transfer_id: 't-1',
+      },
+    };
+
+    vi.mocked(API.post).mockResolvedValueOnce(mockResponse);
 
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
@@ -53,33 +70,40 @@ describe('useCreateStockTransfer', () => {
     expect(result.current.data).toEqual(mockResponse.data);
 
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: transferProductKeys.byBranch('branch-A'),
+      queryKey: transferProductKeys.byBranch(sourceBranchId),
     });
+
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: transferProductKeys.byBranch('branch-B'),
+      queryKey: transferProductKeys.byBranch(destinationBranchId),
     });
+
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: productKeys.all('branch-A'),
+      queryKey: productKeys.all(sourceBranchId),
     });
+
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: productKeys.all('branch-B'),
+      queryKey: productKeys.all(destinationBranchId),
     });
+
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: stockTransferKeys.list('branch-A'),
+      queryKey: stockTransferKeys.list(sourceBranchId),
     });
+
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: stockTransferKeys.list('branch-B'),
+      queryKey: stockTransferKeys.list(destinationBranchId),
     });
   });
 
   it('no debe limpiar ni invalidar nada si el backend devuelve un error', async () => {
     const payload: CreateStockTransferDTO = {
-      sourceBranchId: 'branch-A',
-      destinationBranchId: 'branch-B',
-      items: [{ product_id: 'prod-1', quantity: '5' }],
+      sourceBranchId,
+      destinationBranchId,
+      items: [{ product_id: productId, quantity: '5' }],
     };
 
-    (API.post as any).mockRejectedValueOnce(new Error('Error del servidor'));
+    vi.mocked(API.post).mockRejectedValueOnce(
+      new Error('Error del servidor'),
+    );
 
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
