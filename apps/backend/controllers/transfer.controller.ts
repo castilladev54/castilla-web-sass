@@ -47,11 +47,19 @@ export const executeStockTransfer = async (
 
     return res.status(200).json(result);
   } catch (error: unknown) {
+
+    console.error('TRANSFER POST ERROR:', error);
     if (error instanceof AppError) {
-      return res.status(error.statusCode).json({
+      return res.status(error.status).json({
         error: error.message,
       });
     }
+
+    if (error instanceof Error) {
+      console.error('TRANSFER POST MESSAGE:', error.message);
+      console.error('TRANSFER POST STACK:', error.stack);
+    }
+
 
     return res.status(500).json({
       error: 'Unexpected error',
@@ -65,6 +73,11 @@ export const setTransferStatus = async (
 ) => {
   try {
     const { id } = req.params;
+
+    if (typeof id !== 'string' || id.length === 0) {
+      throw new AppError(400, 'ID de transferencia inválido.');
+    }
+
     const { status } = req.body as {
       status: TransferStatus;
     };
@@ -91,8 +104,9 @@ export const setTransferStatus = async (
       transfer: updated,
     });
   } catch (error: unknown) {
+
     if (error instanceof AppError) {
-      return res.status(error.statusCode).json({
+      return res.status(error.status).json({
         error: error.message,
       });
     }

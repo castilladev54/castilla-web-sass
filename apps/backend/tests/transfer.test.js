@@ -34,11 +34,31 @@ describe('POST /api/transfers', () => {
   beforeAll(async () => {
     mongoServer = await MongoMemoryReplSet.create({
       binary: {
-        version: '7.0.14'
-      }
+        version: '7.0.14',
+      },
+      replSet: {
+        count: 1,
+      },
+      instanceOpts: [
+        {
+          launchTimeout: 60000,
+        },
+      ],
     });
 
     await mongoose.connect(mongoServer.getUri());
+
+    await Promise.all(
+      mongoose.modelNames().map((modelName) =>
+        mongoose.model(modelName).init(),
+      ),
+    );
+
+    const hello = await mongoose.connection.db.admin().command({ hello: 1 });
+    console.log('MONGO HELLO:', {
+      setName: hello.setName,
+      isWritablePrimary: hello.isWritablePrimary,
+    });
   });
 
   afterAll(async () => {
@@ -134,10 +154,25 @@ describe('POST /api/transfers', () => {
 
     console.log('TRANSFER RESPONSE:', response.status, response.body);
 
-    expect(response.body).toEqual({
+    expect(response.body).toMatchObject({
       success: true,
-      message: 'Transferencia completada exitosamente'
+      message: 'Transferencia completada exitosamente.',
+      transfer: {
+        sourceBranchId: sourceBranch._id.toString(),
+        destinationBranchId: destinationBranch._id.toString(),
+        status: 'COMPLETED',
+        createdBy: owner._id.toString(),
+        businessOwnerId: owner._id.toString(),
+        notes: 'Transferencia de prueba',
+      },
     });
+
+    expect(response.body.transfer.items).toEqual([
+      {
+        product_id: product._id.toString(),
+        quantity: '3',
+      },
+    ]);
 
     const sourceInventory = await Inventory.findOne({
       branch_id: sourceBranch._id,

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import mongoose from 'mongoose';
-import { MongoMemoryServer } from 'mongodb-memory-server';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import app from '../server.js';
 import { User } from '../models/User.js';
 import bcryptjs from 'bcryptjs';
@@ -18,19 +18,15 @@ let mongoServer;
 beforeAll(async () => {
   // Asegurar que exista una clave secreta para los tests
   process.env.JWT_SECRET = process.env.JWT_SECRET || 'test_secret_key';
-  
-  mongoServer = await MongoMemoryServer.create({
-    instance: {
-      launchTimeout: 60000, // 60s para que mongod arranque
-    },
+
+  mongoServer = await MongoMemoryReplSet.create({
+    binary: { version: '7.0.14' },
+    replSet: { count: 1 },
+    instanceOpts: [{ launchTimeout: 60000 }],
   });
-  const mongoUri = mongoServer.getUri();
-  
-  if (mongoose.connection.readyState !== 0) {
-    await mongoose.disconnect();
-  }
-  await mongoose.connect(mongoUri);
-}, 120000);
+  const uri = mongoServer.getUri();
+  await mongoose.connect(uri);
+});
 
 afterAll(async () => {
   await mongoose.disconnect();

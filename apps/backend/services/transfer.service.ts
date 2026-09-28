@@ -66,21 +66,18 @@ export const transferStockBetweenBranches = async ({
       );
     }
 
-    const [sourceBranch, destinationBranch] = await Promise.all([
-      Branch.findOne({
-        _id: sourceBranchId,
-        owner_id: businessOwnerId,
-      })
-        .session(session)
-        .lean(),
+    /*
+     * ============================================================
+     * 1. VALIDAR SUCURSAL DE ORIGEN
+     * ============================================================
+     */
 
-      Branch.findOne({
-        _id: destinationBranchId,
-        owner_id: businessOwnerId,
-      })
-        .session(session)
-        .lean(),
-    ]);
+    const sourceBranch = await Branch.findOne({
+      _id: sourceBranchId,
+      owner_id: businessOwnerId,
+    })
+      .session(session)
+      .lean();
 
     if (!sourceBranch) {
       throw new AppError(
@@ -89,12 +86,31 @@ export const transferStockBetweenBranches = async ({
       );
     }
 
+    /*
+     * ============================================================
+     * 2. VALIDAR SUCURSAL DE DESTINO
+     * ============================================================
+     */
+
+    const destinationBranch = await Branch.findOne({
+      _id: destinationBranchId,
+      owner_id: businessOwnerId,
+    })
+      .session(session)
+      .lean();
+
     if (!destinationBranch) {
       throw new AppError(
         404,
         'Sucursal de destino no encontrada o no pertenece a su tenant.',
       );
     }
+
+    /*
+     * ============================================================
+     * 3. VALIDAR PRODUCTOS
+     * ============================================================
+     */
 
     const products = await Product.find({
       _id: { $in: productIds },
@@ -109,6 +125,12 @@ export const transferStockBetweenBranches = async ({
         'Uno o más productos no fueron encontrados o no pertenecen a su negocio.',
       );
     }
+
+    /*
+     * ============================================================
+     * 4. TRANSFERIR CADA PRODUCTO
+     * ============================================================
+     */
 
     for (const item of items) {
       const { product_id, quantity } = item;
@@ -141,23 +163,32 @@ export const transferStockBetweenBranches = async ({
       const decimalNegativeQuantity =
         mongoose.Types.Decimal128.fromString(`-${quantity}`);
 
-      const sourceInventory = await Inventory.findOneAndUpdate(
-        {
-          branch_id: sourceBranchId,
-          product_id,
-          owner_id: businessOwnerId,
-          quantity: { $gte: decimalQuantity },
-        },
-        {
-          $inc: {
-            quantity: decimalNegativeQuantity,
+      /*
+       * ------------------------------------------------------------
+       * 4.1 DESCONTAR STOCK DE ORIGEN
+       * ------------------------------------------------------------
+       */
+
+      const sourceInventory =
+        await Inventory.findOneAndUpdate(
+          {
+            branch_id: sourceBranchId,
+            product_id,
+            owner_id: businessOwnerId,
+            quantity: {
+              $gte: decimalQuantity,
+            },
           },
-        },
-        {
-          new: false,
-          session,
-        },
-      );
+          {
+            $inc: {
+              quantity: decimalNegativeQuantity,
+            },
+          },
+          {
+            new: false,
+            session,
+          },
+        );
 
       if (!sourceInventory) {
         throw new AppError(
@@ -173,6 +204,12 @@ export const transferStockBetweenBranches = async ({
         .minus(quantity)
         .toString();
 
+      /*
+       * ------------------------------------------------------------
+       * 4.2 MOVIMIENTO TRANSFER_OUT
+       * ------------------------------------------------------------
+       */
+
       await StockMovement.create(
         [
           {
@@ -181,17 +218,27 @@ export const transferStockBetweenBranches = async ({
             branch_id: sourceBranchId,
             owner_id: businessOwnerId,
             type: StockMovementType.TRANSFER_OUT,
-            quantity_change: Big(quantity).times(-1).toString(),
+            quantity_change: Big(quantity)
+              .times(-1)
+              .toString(),
             previous_quantity: previousSourceQuantity,
             new_quantity: newSourceQuantity,
             created_by: actorId,
             reason:
-              notes ||
+              notes ??
               `Transferencia hacia sucursal ${destinationBranch.name}`,
           },
         ],
-        { session },
+        {
+          session,
+        },
       );
+
+      /*
+       * ------------------------------------------------------------
+       * 4.3 AUMENTAR / CREAR STOCK DESTINO
+       * ------------------------------------------------------------
+       */
 
       const destinationInventory =
         await Inventory.findOneAndUpdate(
@@ -232,6 +279,12 @@ export const transferStockBetweenBranches = async ({
         .minus(quantity)
         .toString();
 
+      /*
+       * ------------------------------------------------------------
+       * 4.4 MOVIMIENTO TRANSFER_IN
+       * ------------------------------------------------------------
+       */
+
       await StockMovement.create(
         [
           {
@@ -245,13 +298,21 @@ export const transferStockBetweenBranches = async ({
             new_quantity: newDestinationQuantity,
             created_by: actorId,
             reason:
-              notes ||
+              notes ??
               `Transferencia desde sucursal ${sourceBranch.name}`,
           },
         ],
-        { session },
+        {
+          session,
+        },
       );
     }
+
+    /*
+     * ============================================================
+     * 5. CREAR REGISTRO HISTÓRICO DE TRANSFERENCIA
+     * ============================================================
+     */
 
     const transferItems: StockTransferItem[] = items.map(
       (item) => ({
@@ -272,8 +333,23 @@ export const transferStockBetweenBranches = async ({
           notes,
         },
       ],
-      { session },
+      {
+        session,
+      },
     );
+
+    if (!transfer) {
+      throw new AppError(
+        500,
+        'No fue posible crear el registro de la transferencia.',
+      );
+    }
+
+    /*
+     * ============================================================
+     * 6. COMMIT
+     * ============================================================
+     */
 
     await session.commitTransaction();
 
@@ -283,7 +359,10 @@ export const transferStockBetweenBranches = async ({
       transfer,
     };
   } catch (error) {
-    await session.abortTransaction();
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
+
     throw error;
   } finally {
     await session.endSession();
