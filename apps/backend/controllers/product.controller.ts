@@ -134,7 +134,7 @@ export const getProducts = async (req: Request, res: Response): Promise<void> =>
     const ttl = normalizedSearch.length >= 3 ? 30 : 300;
 
     // 2. Validación estricta de ordenación (Whitelist)
-    const allowedSortFields = ['createdAt', 'name', 'price', 'total_stock'];
+    const allowedSortFields = ['createdAt', 'name', 'price', 'totalStock'];
     const sortBy = allowedSortFields.includes(req.query.sortBy as string)
       ? (req.query.sortBy as string)
       : 'createdAt';

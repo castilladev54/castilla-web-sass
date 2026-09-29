@@ -136,14 +136,24 @@ const branchB = 'branch-B' as BranchId;
     expect(result.current.cart).toEqual([]);
   });
 
-  test('cambio de sucursal descarta carrito', () => {
-    const { result } = renderHook(() => useTransferCart(branchA));
+  test('soporta actualización reactiva de sourceBranchId vía re-render', () => {
+    let currentBranch: BranchId | null = null;
+    const { result, rerender } = renderHook(() => useTransferCart(currentBranch));
+
+    expect(() => {
+      act(() => {
+        result.current.addItem(productA, '4');
+      });
+    }).toThrow(TransferCartError);
+
+    currentBranch = branchA;
+    rerender();
+
     act(() => {
       result.current.addItem(productA, '4');
-      result.current.changeBranch(branchB);
     });
-    expect(result.current.cart).toEqual([]);
-    expect(result.current.sourceBranchId).toBe(branchB);
+    expect(result.current.cart).toHaveLength(1);
+    expect(result.current.cart[0]?.quantity).toBe('4');
   });
 
   test('sourceBranchId null bloquea operaciones', () => {

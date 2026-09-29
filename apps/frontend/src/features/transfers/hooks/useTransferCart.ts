@@ -14,11 +14,8 @@ import {
  * It keeps the cart in component state and validates operations against the
  * currently selected source branch.
  */
-export function useTransferCart(initialSourceBranchId: BranchId | null = null) {
+export function useTransferCart(sourceBranchId: BranchId | null = null) {
   const [cart, setCart] = useState<TransferCartItem[]>([]);
-  const [sourceBranchId, setSourceBranchId] = useState<BranchId | null>(
-    initialSourceBranchId,
-  );
 
   const addItem = useCallback(
     (product: Product, quantity: string) => {
@@ -50,28 +47,11 @@ export function useTransferCart(initialSourceBranchId: BranchId | null = null) {
     setCart([]);
   }, []);
 
-  /**
-   * Change the source branch. When the branch changes we must discard the
-   * current cart because its quantities were validated against the previous
-   * branch's stock.
-   */
-  const changeBranch = useCallback(
-    (newBranchId: BranchId | null) => {
-      if (newBranchId !== sourceBranchId) {
-        setSourceBranchId(newBranchId);
-        setCart([]);
-      }
-    },
-    [sourceBranchId],
-  );
-
   return {
     cart,
     addItem,
     updateQuantity,
     removeItem,
     clear,
-    changeBranch,
-    sourceBranchId,
   };
 }

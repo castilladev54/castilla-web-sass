@@ -69,6 +69,7 @@ export default function CreateStockTransferModal({
 
   const handleSourceBranchChange = (branchId: BranchId) => {
     setSourceBranchId(branchId);
+    clear();
     
     if (destinationBranchId === branchId) {
       setDestinationBranchId(null);
@@ -78,7 +79,6 @@ export default function CreateStockTransferModal({
     setSelectedProduct(null);
     setQuantityInput('');
     setSearchTerm('');
-    // El carrito ya se limpia automáticamente por el useEffect interno de useTransferCart
   };
 
   const handleClose = () => {

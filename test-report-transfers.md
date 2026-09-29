@@ -15,6 +15,7 @@ Este informe detalla las pruebas necesarias y cómo probar los endpoints recién
 
 **Body (JSON):**
 ```json
+
 {
   "sourceBranchId": "ID_SUCURSAL_ORIGEN",
   "destinationBranchId": "ID_SUCURSAL_DESTINO",
