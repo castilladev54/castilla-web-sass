@@ -3,16 +3,21 @@ import { vi } from 'vitest';
 
 // Garantía de aislamiento: forzar entorno de prueba
 process.env.NODE_ENV = 'test';
-
-// JWT_SECRET: si no está en .env.test, inyectar un valor determinista
-// para que todos los tokens firmados en memoria sean verificables.
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test_secret_key_for_vitest_suite';
+process.env.JWT_REFRESH_SECRET =
+  process.env.JWT_REFRESH_SECRET || 'test_refresh_secret_key_for_vitest_suite';
 
 // Verificación de fallo rápido: si tras el fallback sigue sin estar definido,
 // hay un problema de configuración grave que hay que resolver antes de correr tests.
 if (!process.env.JWT_SECRET) {
   throw new Error(
     'Error crítico: La suite de Vitest no puede iniciar sin un JWT_SECRET configurado.'
+  );
+}
+
+if (!process.env.JWT_REFRESH_SECRET) {
+  throw new Error(
+    'Error crítico: La suite de Vitest no puede iniciar sin un JWT_REFRESH_SECRET configurado.'
   );
 }
 

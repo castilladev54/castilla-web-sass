@@ -4,7 +4,8 @@ export type ShiftStatus = 'OPEN' | 'CLOSED';
 
 export interface ICashShift {
   branch_id: Types.ObjectId;
-  cashier_id: Types.ObjectId;
+  cashier_id?: Types.ObjectId;
+  user_id?: Types.ObjectId;
   status: ShiftStatus;
   opening_balance: Types.Decimal128;
   expected_balance?: Types.Decimal128;
@@ -31,8 +32,19 @@ const CashShiftSchema = new Schema<ICashShiftDocument>(
     cashier_id: {
       type: Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
       index: true,
+    },
+    user_id: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      index: true,
+      set(value: Types.ObjectId | undefined | null) {
+        if (value && !this.cashier_id) this.cashier_id = value;
+        return value;
+      },
+      get() {
+        return this.cashier_id ?? undefined;
+      },
     },
     status: {
       type: String,
@@ -80,7 +92,18 @@ const CashShiftSchema = new Schema<ICashShiftDocument>(
   }
 );
 
-// Índice único parcial: Previene a nivel atómico en BD que un cajero tenga >1 turno OPEN en la misma sucursal
+CashShiftSchema.pre('validate', function (next) {
+  if (!this.cashier_id && this.user_id) {
+    this.cashier_id = this.user_id;
+  }
+
+  if (!this.user_id && this.cashier_id) {
+    this.user_id = this.cashier_id;
+  }
+
+  next();
+});
+
 CashShiftSchema.index(
   { branch_id: 1, cashier_id: 1, status: 1 },
   {

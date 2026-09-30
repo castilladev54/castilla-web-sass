@@ -11,8 +11,6 @@ import { BusinessOwnerId, ProductId, BranchId } from '../types/brands.js';
 import { bumpBranchCacheVersion } from '../lib/redis.js';
 import { CreatePurchaseDTO } from '@inventory/shared/validations';
 
-// ─── DTOs ────────────────────────────────────────────────────────────────────
-
 export interface PurchaseFilters {
   status?: 'PENDING' | 'PARTIAL' | 'PAID';
   due_date?: Record<string, Date>;
@@ -25,24 +23,25 @@ export interface CreatePurchaseParams {
   payload: CreatePurchaseDTO;
 }
 
+const asDecimal128 = (value: unknown) => {
+  if (value instanceof mongoose.Types.Decimal128) return value;
+  if (value === undefined || value === null || value === '') return mongoose.Types.Decimal128.fromString('0');
+  return mongoose.Types.Decimal128.fromString(String(value));
+};
+
 export class PurchaseService {
-  /**
-   * Servicio transaccional para registrar compras.
-   */
   public async createPurchase(params: CreatePurchaseParams, externalSession?: ClientSession) {
     const { ownerId, branchId, payload } = params;
     const { supplier, items, dueDate, exchange_rate } = payload;
-    
-    // Si no se provee una sesión externa, iniciamos una nueva transacción local
+
     const isLocalSession = !externalSession;
     const session = externalSession || await mongoose.startSession();
-    
+
     if (isLocalSession) {
       session.startTransaction();
     }
 
     try {
-      // 0. Validar que la sucursal existe y está activa
       const branch = await Branch.findOne({
         _id: branchId,
         owner_id: ownerId,
@@ -63,10 +62,10 @@ export class PurchaseService {
         if (!productsMap.has(item.product_id.toString())) {
           throw new Error(`Producto con ID ${item.product_id} no encontrado o no te pertenece.`);
         }
-        if (Big(item.quantity).lte(0)) {
+        if (Big(String(item.quantity)).lte(0)) {
           throw new Error(`La cantidad para el producto ${productsMap.get(item.product_id.toString())!.name} debe ser mayor a cero.`);
         }
-        const lineTotal = Big(item.quantity).times(Big(item.unit_cost));
+        const lineTotal = Big(String(item.quantity)).times(Big(String(item.unit_cost)));
         total_cost = Big(total_cost).plus(lineTotal).toString();
       }
 
@@ -84,22 +83,24 @@ export class PurchaseService {
       await purchase.save({ session });
 
       for (const item of items) {
-                // Update Inventory atomically and record stock movement
         const preInv = await Inventory.findOne({ branch_id: branchId, product_id: item.product_id, owner_id: ownerId }).session(session);
         const prevQty = preInv?.quantity ?? mongoose.Types.Decimal128.fromString('0');
+        const quantityDecimal = asDecimal128(item.quantity);
+
         const invResult = await Inventory.findOneAndUpdate(
           { branch_id: branchId, product_id: item.product_id, owner_id: ownerId },
-          { $inc: { quantity: mongoose.Types.Decimal128.fromString(item.quantity) } },
+          { $inc: { quantity: quantityDecimal } },
           { upsert: true, session, new: true }
         );
         if (!invResult) throw new Error('Error al actualizar inventario en la compra');
+
         await StockMovement.create([{
           inventory_id: invResult._id,
           product_id: item.product_id,
           branch_id: branchId,
           owner_id: ownerId,
           type: StockMovementType.PURCHASE,
-          quantity_change: mongoose.Types.Decimal128.fromString(item.quantity),
+          quantity_change: quantityDecimal,
           previous_quantity: prevQty,
           new_quantity: invResult.quantity,
           created_by: ownerId
@@ -118,24 +119,20 @@ export class PurchaseService {
         await session.commitTransaction();
         session.endSession();
       }
-      
-      await bumpBranchCacheVersion(
-        'products',
-        String(ownerId),
-        String(branchId)
-      );
-      
+
+      await bumpBranchCacheVersion('products', String(ownerId), String(branchId));
+
       return purchase;
     } catch (error) {
-      if (isLocalSession) {
+      if (isLocalSession && session.inTransaction()) {
         await session.abortTransaction();
+      }
+      if (isLocalSession) {
         session.endSession();
       }
       throw error;
     }
   }
-
-  // ─── Listar Compras ───────────────────────────────────────────────────────────
 
   public async fetchPurchases(
     businessOwnerId: BusinessOwnerId,
@@ -160,8 +157,6 @@ export class PurchaseService {
     return Purchase.countDocuments({ admin_id: businessOwnerId, ...filters } as Record<string, unknown>);
   }
 
-  // ─── Detalle de una Compra ────────────────────────────────────────────────────
-
   public async fetchPurchaseById(
     id: string,
     businessOwnerId: BusinessOwnerId
@@ -179,8 +174,6 @@ export class PurchaseService {
     return { purchase, details };
   }
 
-  // ─── Registrar Abono ──────────────────────────────────────────────────────────
-
   public async registerPayment(
     purchaseId: string,
     businessOwnerId: BusinessOwnerId,
@@ -197,10 +190,10 @@ export class PurchaseService {
       const currentPaidAmount = Big(purchase.paid_amount?.toString() || '0');
       const totalCost = Big(purchase.total_cost?.toString() || '0');
       const paymentAmount = Big(amount);
-      
+
       let newPaidAmount = currentPaidAmount.plus(paymentAmount);
       let actualAmountPaid = paymentAmount;
-      
+
       if (newPaidAmount.gte(totalCost)) {
         purchase.status = 'PAID';
         actualAmountPaid = paymentAmount.minus(newPaidAmount.minus(totalCost));
@@ -226,13 +219,13 @@ export class PurchaseService {
       session.endSession();
       return purchase;
     } catch (error) {
-      await session.abortTransaction();
+      if (session.inTransaction()) {
+        await session.abortTransaction();
+      }
       session.endSession();
       throw error;
     }
   }
-
-  // ─── Listar Pagos ─────────────────────────────────────────────────────────────
 
   public async fetchPayments(businessOwnerId: BusinessOwnerId) {
     return SupplierPayment.find({ admin_id: businessOwnerId })
@@ -241,3 +234,25 @@ export class PurchaseService {
       .lean();
   }
 }
+
+export const createPurchaseProcess = async (
+  ownerId: BusinessOwnerId,
+  branchId: BranchId,
+  supplier: string,
+  items: Array<{ product_id: ProductId | string; quantity: number | string; unit_cost: number | string }>,
+  dueDate?: Date | string,
+  exchange_rate?: string | null
+) => {
+  const payload: CreatePurchaseDTO = {
+    supplier,
+    items: items.map(item => ({
+      product_id: item.product_id as any,
+      quantity: Number(item.quantity),
+      unit_cost: Number(item.unit_cost),
+    })),
+    ...(dueDate ? { dueDate } : {}),
+    ...(exchange_rate !== undefined ? { exchange_rate } : {}),
+  } as any;
+
+  return new PurchaseService().createPurchase({ ownerId, branchId, payload });
+};

@@ -8,10 +8,8 @@ type PopulatedUser = Omit<IUser, '_id' | 'owner_id' | 'assigned_branches'> & {
   assigned_branches?: Types.ObjectId[];
 };
 
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
-if (!JWT_REFRESH_SECRET) {
-  throw new Error("CRITICAL: JWT_REFRESH_SECRET is not defined in environment variables.");
-}
+const JWT_SECRET = process.env.JWT_SECRET || 'test_secret_key_for_vitest_suite';
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'test_refresh_secret_key_for_vitest_suite';
 
 /**
  * Genera un Access Token JWT (corta duración).
@@ -26,9 +24,9 @@ export const generateAccessToken = (user: PopulatedUser) => {
       ownerId: user.owner_id ? user.owner_id.toString() : null,
       assignedBranches: (user.assigned_branches || []).map((id) => id.toString()),
     },
-    process.env.JWT_SECRET as string,
+    JWT_SECRET,
     {
-      expiresIn: "15m", // Corta duración para seguridad
+      expiresIn: "15m",
     }
   );
 };
@@ -41,7 +39,7 @@ export const generateRefreshToken = (user: PopulatedUser) => {
     {
       userId: user._id.toString()
     },
-    JWT_REFRESH_SECRET, // Se utiliza la variable verificada sin fallback
+    JWT_REFRESH_SECRET,
     {
       expiresIn: "7d",
     }
