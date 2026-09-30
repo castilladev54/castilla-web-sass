@@ -34,7 +34,7 @@ const AdjustmentManager = () => {
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
-  const columns: DataTableColumn<IInventoryAdjustment>[] = [
+  const columns: DataTableColumn<any>[] = [
     {
       key: 'createdAt',
       label: 'Fecha',
@@ -43,7 +43,7 @@ const AdjustmentManager = () => {
     {
       key: 'product',
       label: 'Producto',
-      render: (_, row) => (
+      render: (_: any, row: any) => (
         <div>
           <div className="font-medium">{row.product_id?.name || 'Producto Desconocido'}</div>
           <div className="text-xs text-gray-500">{row.product_id?.barcode || 'Sin código'}</div>
@@ -67,11 +67,14 @@ const AdjustmentManager = () => {
     {
       key: 'difference',
       label: 'Variación',
-      render: (val: number) => (
-        <span className={`font-semibold ${val > 0 ? 'text-green-400' : val < 0 ? 'text-red-400' : 'text-gray-400'}`}>
-          {val > 0 ? `+${val}` : val}
-        </span>
-      ),
+      render: (val: number, row: any) => {
+        const diff = (row.quantity_change ?? 0);
+        return (
+          <span className={`font-semibold ${diff > 0 ? 'text-green-400' : diff < 0 ? 'text-red-400' : 'text-gray-400'}`}>
+            {diff > 0 ? `+${diff}` : diff}
+          </span>
+        );
+      },
     },
     {
       key: 'new_stock',

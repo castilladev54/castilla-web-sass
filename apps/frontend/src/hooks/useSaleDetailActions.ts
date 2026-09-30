@@ -5,7 +5,7 @@ import { useAuthStore } from '../store/authStore';
 import { useCancelSale, saleKeys } from './queries/useSaleQueries';
 import { api as API } from '../api/axiosClient';
 import type { SaleId } from '@inventory/shared';
-import type { SaleDetailDTO } from '../types/saleDTO';
+import type { SaleDetailDTO } from '@inventory/shared';
 
 export function useSaleDetailActions() {
   const queryClient = useQueryClient();

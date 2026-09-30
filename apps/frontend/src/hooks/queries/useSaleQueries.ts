@@ -145,7 +145,7 @@ mutationFn: async ({ signal, idempotencyKey, ...payload }) => {
       const error = err as AxiosError<{ message?: string; error?: string }>;
       if (error?.response?.status === 403) {
         const userId = useAuthStore.getState().user?._id;
-        qc.invalidateQueries({ queryKey: cashShiftKeys.current(activeBranchId, userId) });
+        qc.invalidateQueries({ queryKey: cashShiftKeys.current(activeBranchId, userId ?? null) });
         toast.error("Turno de caja cerrado o expirado. Abre un nuevo turno.");
       }
       
@@ -188,3 +188,4 @@ export function useUpdateSale() {
     },
   });
 }
+

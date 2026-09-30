@@ -32,7 +32,7 @@ const ExchangeRateBar = () => {
     }
 
     try {
-      await saveMutation.mutateAsync({ rate: rateNum });
+      await saveMutation.mutateAsync({ rate: String(rateNum) });
       setEditing(false);
       toast.success(`Tasa actualizada: 1 USD = ${rateNum} Bs`);
     } catch {

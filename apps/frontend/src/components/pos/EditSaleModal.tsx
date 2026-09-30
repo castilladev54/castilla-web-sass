@@ -37,11 +37,11 @@ const EditSaleModal = ({ isOpen, onClose, sale, onSave }: EditSaleModalProps) =>
     if (sale) {
       setPaymentMethod(sale.payment_method || "Efectivo");
       setItems(
-        sale.items?.map((i) => ({
+        sale.items?.map((i: any) => ({
           product_id: (i.product_id?._id || i.product_id || "") as string,
           name: i.product_id?.name || "Producto desconocido",
-          quantity: i.quantity || 0,
-          unit_price: i.unit_price || 0,
+          quantity: Number(i.quantity) || 0,
+          unit_price: Number(i.unit_price) || 0,
           unit_type: i.product_id?.unit_type || "unidad",
         })) || []
       );
@@ -67,12 +67,12 @@ const EditSaleModal = ({ isOpen, onClose, sale, onSave }: EditSaleModalProps) =>
     e.preventDefault();
     
     const payload = {
-      total_amount: computedTotal,
+      total_amount: String(computedTotal),
       payment_method: paymentMethod,
       items: items.map((i) => ({
         product_id: i.product_id as any,
-        quantity: Number(i.quantity) || 0,
-        unit_price: Number(i.unit_price),
+        quantity: String(Number(i.quantity) || 0),
+        unit_price: String(Number(i.unit_price) || 0),
       })),
     };
 
@@ -215,3 +215,4 @@ const EditSaleModal = ({ isOpen, onClose, sale, onSave }: EditSaleModalProps) =>
 };
 
 export default EditSaleModal;
+

@@ -103,7 +103,7 @@ const CreateAdjustmentModal = ({ isOpen, onClose }: Props) => {
                 <option value="">Selecciona un producto...</option>
                 {products.map((p: Product) => (
                   <option key={p._id} value={p._id}>
-                    {p.name} {p.barcode ? `(${p.barcode})` : ''} - Stock actual: {p.stock ?? 0}
+                    {p.name} {p.barcode ? `(${p.barcode})` : ''} - Stock actual: {(p as any).stock ?? (p as any).quantity ?? 0}
                   </option>
                 ))}
               </select>

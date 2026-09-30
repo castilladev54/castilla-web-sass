@@ -151,7 +151,7 @@ const PurchaseCard = ({ purchase, onClick }: PurchaseCardProps) => {
       <div className="flex items-end justify-between mb-4">
         <div>
           <p className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1">Total</p>
-          <p className="text-2xl font-bold text-white">{fmtCost(total)}</p>
+          <p className="text-2xl font-bold text-white">{fmtUSD(total)}</p>
         </div>
         {dueRaw && (
           <p className="text-xs text-gray-500 flex items-center gap-1">
@@ -171,7 +171,7 @@ const PurchaseCard = ({ purchase, onClick }: PurchaseCardProps) => {
       </div>
 
       <div className="flex justify-between mt-2">
-        <span className="text-xs text-gray-500">{fmtCost(paid)} abonado</span>
+        <span className="text-xs text-gray-500">{fmtUSD(paid)} abonado</span>
         <span className="text-xs text-gray-400 flex items-center gap-1 group-hover:text-indigo-400 transition-colors">
           Ver detalles <ChevronRight size={14} />
         </span>
@@ -280,7 +280,7 @@ const PurchaseDetailView = ({ purchase, onBack, onPay }: PurchaseDetailViewProps
   const handlePay = async (e: FormEvent) => {
     e.preventDefault();
     if (!payAmount || Number(payAmount) <= 0) return toast.error('Ingresa un monto válido');
-    if (Number(payAmount) > pending) return toast.error(`El monto no puede superar la deuda pendiente (${fmtCost(pending)})`);
+    if (Number(payAmount) > pending) return toast.error(`El monto no puede superar la deuda pendiente (${fmtUSD(pending)})`);
 
     setIsPaying(true);
     try {
@@ -319,12 +319,12 @@ const PurchaseDetailView = ({ purchase, onBack, onPay }: PurchaseDetailViewProps
         <div className="flex gap-4 p-4 bg-black/30 rounded-2xl border border-white/5 w-full md:w-auto">
           <div>
             <p className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1">Abonado</p>
-            <p className="text-xl font-bold text-emerald-400">{fmtCost(paid)}</p>
+            <p className="text-xl font-bold text-emerald-400">{fmtUSD(paid)}</p>
           </div>
           <div className="w-px bg-white/10 mx-2"></div>
           <div>
             <p className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1">Pendiente</p>
-            <p className="text-xl font-bold text-rose-400">{fmtCost(pending)}</p>
+            <p className="text-xl font-bold text-rose-400">{fmtUSD(pending)}</p>
           </div>
         </div>
       </header>
@@ -369,9 +369,9 @@ const PurchaseDetailView = ({ purchase, onBack, onPay }: PurchaseDetailViewProps
                         <td className="px-6 py-4 text-gray-300">
                           <span className="bg-white/10 px-2 py-1 rounded-md text-sm font-medium">{item.quantity}</span>
                         </td>
-                        <td className="px-6 py-4 text-gray-400">{fmtCost(item.unit_cost)}</td>
+                        <td className="px-6 py-4 text-gray-400">{fmtUSD(item.unit_cost)}</td>
                         <td className="px-6 py-4 text-right font-medium text-indigo-300">
-                          {fmtCost(parseFloat(String(item.quantity)) * Number(item.unit_cost))}
+                          {fmtUSD(parseFloat(String(item.quantity)) * Number(item.unit_cost))}
                         </td>
                       </tr>
                     );
@@ -381,7 +381,7 @@ const PurchaseDetailView = ({ purchase, onBack, onPay }: PurchaseDetailViewProps
             </div>
             <div className="p-4 bg-black/40 border-t border-white/5 flex justify-end items-center gap-4">
               <span className="text-gray-400 text-sm">Costo Total Compra</span>
-              <span className="text-2xl font-bold text-white">{fmtCost(total)}</span>
+              <span className="text-2xl font-bold text-white">{fmtUSD(total)}</span>
             </div>
           </div>
         </div>
@@ -422,7 +422,7 @@ const PurchaseDetailView = ({ purchase, onBack, onPay }: PurchaseDetailViewProps
                     />
                   </div>
                   <div className="flex justify-between items-center mt-2">
-                    <span className="text-xs text-gray-500">Máx: {fmtCost(pending)}</span>
+                    <span className="text-xs text-gray-500">Máx: {fmtUSD(pending)}</span>
                     <button
                       type="button"
                       onClick={() => setPayAmount(String(pending))}
@@ -595,7 +595,7 @@ const PurchaseManagerInner = () => {
       await createMutation.mutateAsync({
         supplier,
         dueDate: dueDate ? new Date(dueDate).toISOString() : null,
-        exchange_rate: exchangeRate,
+        exchange_rate: exchangeRate ? parseFloat(exchangeRate) : undefined,
         items: items.map(({ product_id, quantity, unit_cost }) => ({
           product_id,
           quantity: parseFloat(String(quantity)) || 0,
@@ -817,7 +817,7 @@ const PurchaseManagerInner = () => {
               <div className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400 flex items-center gap-2 flex-wrap justify-end">
                 <span>{fmtUSD(currentTotal)}</span>
                 {hasValidRate ? (
-                  <span className="text-sm font-normal text-gray-500"> / Bs {toBs(currentTotal, exchangeRate)}</span>
+                  <span className="text-sm font-normal text-gray-500"> / Bs {toBs(currentTotal, String(exchangeRate))}</span>
                 ) : (
                   <span className="text-sm font-normal text-rose-500 flex items-center gap-1 border border-rose-500/30 bg-rose-500/10 px-2 py-1 rounded-md">
                     <AlertCircle size={14} /> Tasa Indisponible
@@ -850,3 +850,4 @@ export default function PurchaseManager() {
     </RateGuard>
   );
 }
+

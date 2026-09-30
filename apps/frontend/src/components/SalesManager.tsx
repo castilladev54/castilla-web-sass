@@ -93,7 +93,7 @@ const SalesManagerInner = () => {
         {!isFormOpen && (
           <div className="flex flex-col gap-4 w-full">
             <Button variant="primary" onClick={() => setIsFormOpen(true)} className="w-full h-16 text-lg shadow-lg shadow-orange-500/20">
-              <Plus size={24} /> Nueva Venta <KBD className="ml-2">F2</KBD>
+              <Plus size={24} /> Nueva Venta <span className="ml-2"><KBD>F2</KBD></span>
             </Button>
             <Button
               variant={currentShift ? "ghost" : "danger"}
@@ -159,3 +159,4 @@ export default function SalesManager() {
     </RequireBranchGuard>
   );
 }
+

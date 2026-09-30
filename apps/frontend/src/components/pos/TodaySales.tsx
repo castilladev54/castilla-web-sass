@@ -124,7 +124,7 @@ export default function TodaySales() {
 
       <DataTable
         columns={buildHistoryColumns(handleViewDetail, exchangeRate)}
-        data={sales}
+        data={sales as any}
         isLoading={isSalesLoading}
         emptyMessage={sales.length === 0 ? "Aún no hay ventas" : "Sin ventas en este período"}
         emptyIcon={<ShoppingCart size={30} />}
@@ -143,3 +143,7 @@ export default function TodaySales() {
     </>
   );
 }
+
+
+
+

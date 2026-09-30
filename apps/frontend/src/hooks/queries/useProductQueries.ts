@@ -188,18 +188,3 @@ export function useTransferProductsQuery(sourceBranchId: BranchId | null) {
   });
 }
 
-export function useCreateStockTransfer() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (payload: CreateStockTransferDTO) => {
-      const response = await API.post('/transfers', payload);
-      return response.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: transferProductKeys.all,
-      });
-    },
-  });
-}
