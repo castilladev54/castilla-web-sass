@@ -102,7 +102,7 @@ app.use((req, res, next) => {
 // 1. CORS Y PARSING
 const whitelist = [
   process.env.CLIENT_URL,
-  'https://dashboard-react-tailwindcss.vercel.app',
+  'https://pos-inventory-system-seven-zeta.vercel.app',
   'http://localhost:5175',
   'http://localhost:5173'
 ]
