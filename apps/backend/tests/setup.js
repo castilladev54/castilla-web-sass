@@ -71,7 +71,6 @@ vi.mock('../lib/redis.js', () => {
       }
     },
     getOrSetCache: async (key, fn) => {
-      // Ejecución directa de la consulta para aislar lógica del caché
       const freshData = await fn();
       return { data: freshData, fromCache: false };
     },
