@@ -1,7 +1,7 @@
 import pino from 'pino';
 import { AsyncLocalStorage } from 'async_hooks';
 
-const isDev = process.env.NODE_ENV !== 'production';
+const isDev = process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1';
 
 export const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -9,13 +9,13 @@ export const logger = pino({
   // En desarrollo, usamos pino-pretty para legibilidad.
   transport: isDev
     ? {
-        target: 'pino-pretty',
-        options: {
-          colorize: true,
-          translateTime: 'SYS:standard',
-          ignore: 'pid,hostname',
-        },
-      }
+      target: 'pino-pretty',
+      options: {
+        colorize: true,
+        translateTime: 'SYS:standard',
+        ignore: 'pid,hostname',
+      },
+    }
     : undefined,
   formatters: {
     level: (label) => ({ level: label }),
