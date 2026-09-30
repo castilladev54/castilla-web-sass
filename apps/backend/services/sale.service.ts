@@ -12,15 +12,19 @@ import { bumpBranchCacheVersion } from '../lib/redis.js';
 import { InsufficientStockError } from '../errors/InsufficientStockError.js';
 
 export interface SaleItemInput {
-  product_id: ProductId;
-  quantity: string;
-  unit_price: string;
+  product_id: ProductId | string;
+  quantity: string | number;
+  unit_price: string | number;
 }
 
 const asDecimal128 = (value: unknown) => {
   if (value instanceof mongoose.Types.Decimal128) return value;
   if (value === undefined || value === null || value === '') return mongoose.Types.Decimal128.fromString('0');
-  return mongoose.Types.Decimal128.fromString(String(value));
+  const str = String(value).trim();
+  if (!str || str === '' || str === 'undefined' || str === 'null') {
+    return mongoose.Types.Decimal128.fromString('0');
+  }
+  return mongoose.Types.Decimal128.fromString(str);
 };
 
 export const createSaleProcess = async (
@@ -59,7 +63,7 @@ export const createSaleProcess = async (
     const productsMap = new Map(products.map(p => [p._id.toString(), p]));
 
     for (const item of items) {
-      const product = productsMap.get(item.product_id.toString());
+      const product = productsMap.get(String(item.product_id).toString());
       if (!product) {
         throw new Error(`Producto con ID ${item.product_id} no encontrado o no te pertenece.`);
       }
@@ -85,8 +89,8 @@ export const createSaleProcess = async (
     }
 
     for (const item of items) {
-      const product = productsMap.get(item.product_id.toString())!;
-      const qtyDecimal = asDecimal128(item.quantity);
+      const product = productsMap.get(String(item.product_id).toString())!;
+      const qtyDecimal = asDecimal128(String(item.quantity));
       const negQtyDecimal = asDecimal128(Big(String(item.quantity)).times(-1).toString());
 
       const preInventory = await Inventory.findOne({ branch_id: branchId, product_id: item.product_id, owner_id: businessOwnerId }).session(session);
@@ -104,7 +108,7 @@ export const createSaleProcess = async (
       );
 
       if (!result) {
-        throw new InsufficientStockError(product.name, item.product_id.toString());
+        throw new InsufficientStockError(product.name, String(item.product_id));
       }
 
       await StockMovement.create([{

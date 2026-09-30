@@ -4,8 +4,8 @@ export type ShiftStatus = 'OPEN' | 'CLOSED';
 
 export interface ICashShift {
   branch_id: Types.ObjectId;
-  cashier_id?: Types.ObjectId;
-  user_id?: Types.ObjectId;
+  cashier_id?: Types.ObjectId | null;
+  user_id?: Types.ObjectId | null;
   status: ShiftStatus;
   opening_balance: Types.Decimal128;
   expected_balance?: Types.Decimal128;
@@ -38,13 +38,6 @@ const CashShiftSchema = new Schema<ICashShiftDocument>(
       type: Schema.Types.ObjectId,
       ref: 'User',
       index: true,
-      set(value: Types.ObjectId | undefined | null) {
-        if (value && !this.cashier_id) this.cashier_id = value;
-        return value;
-      },
-      get() {
-        return this.cashier_id ?? undefined;
-      },
     },
     status: {
       type: String,
@@ -96,11 +89,9 @@ CashShiftSchema.pre('validate', function (next) {
   if (!this.cashier_id && this.user_id) {
     this.cashier_id = this.user_id;
   }
-
   if (!this.user_id && this.cashier_id) {
     this.user_id = this.cashier_id;
   }
-
   next();
 });
 
@@ -108,7 +99,8 @@ CashShiftSchema.index(
   { branch_id: 1, cashier_id: 1, status: 1 },
   {
     unique: true,
-    partialFilterExpression: { status: 'OPEN' },
+    sparse: true,
+    partialFilterExpression: { status: 'OPEN', cashier_id: { $exists: true } },
   }
 );
 
