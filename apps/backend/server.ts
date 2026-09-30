@@ -103,6 +103,7 @@ app.use((req, res, next) => {
 const whitelist = [
   process.env.CLIENT_URL,
   'https://pos-inventory-system-seven-zeta.vercel.app',
+  'https://pos-inventory-system-5yp2zqgb7-castillawebs-projects.vercel.app',
   'http://localhost:5175',
   'http://localhost:5173'
 ]
