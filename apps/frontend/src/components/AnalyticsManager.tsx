@@ -111,9 +111,9 @@ const KpiCard = ({ label, value, icon: Icon, iconColor, gradient, badge, delay }
 interface DateItem {
   createdAt?: string;
   date?: string;
-  total_usd?: number;
-  total_amount?: number;
-  amount?: number;
+  total_usd?: number | string;
+  total_amount?: number | string;
+  amount?: number | string;
 }
 
 const filterByDate = <T extends DateItem>(items: T[], dateFilter: string): T[] => {
@@ -258,11 +258,10 @@ const AnalyticsManager = () => {
           {canViewGlobal && (
             <button
               onClick={() => setIsGlobal(!isGlobal)}
-              className={`px-4 py-2 rounded-xl border text-sm font-medium transition-all ${
-                isGlobal
+              className={`px-4 py-2 rounded-xl border text-sm font-medium transition-all ${isGlobal
                   ? 'bg-blue-500/20 border-blue-500/50 text-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.2)]'
                   : 'bg-[#1a1a24] border-white/10 text-gray-400 hover:text-white'
-              }`}
+                }`}
             >
               {isGlobal ? 'Vista Global (Todas las Sucursales)' : 'Vista Local (Sucursal Actual)'}
             </button>
