@@ -14,9 +14,7 @@ interface Message {
   content: string;
 }
 
-const API_URL = import.meta.env.MODE === 'development'
-  ? 'http://localhost:5000/api/ai/ask'
-  : 'https://backend-inventory-system.vercel.app/api/ai/ask';
+const API_URL = '/api/ai/ask';
 
 export const AiChatWindow = ({ onClose }: AiChatWindowProps) => {
   const [messages, setMessages] = useState<Message[]>([

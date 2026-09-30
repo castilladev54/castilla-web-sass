@@ -2,10 +2,10 @@
   "name": "@inventory/backend",
   "version": "1.0.0",
   "description": "",
-  "main": "server.js",
+  "main": "server.ts",
   "scripts": {
-    "dev": "tsx watch server.js",
-    "start": "node server.js",
+    "dev": "tsx watch server.ts",
+    "start": "tsx server.ts",
     "test": "cross-env MONGOMS_VERSION=7.0.14 vitest"
   },
   "keywords": [],
