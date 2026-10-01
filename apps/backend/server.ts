@@ -9,6 +9,7 @@ import cookieParser from "cookie-parser";
 import path from "path";
 import mongoose from "mongoose";
 
+
 // ⚠️ Optimizador de V8 para Serialización de Decimal128 (O(1) C++)
 // Evita bucles recursivos en .lean() y .aggregate() al hacer res.json()
 mongoose.Types.Decimal128.prototype.toJSON = function () {
@@ -24,7 +25,8 @@ import { verifyToken } from "./middleware/verifyToken.js";
 import { checkSubscription } from "./middleware/checkSubscription.js";
 import { injectBusinessContext } from "./middleware/requirePermission.js";
 import { slaTimeout } from "./middleware/sla.middleware.js";
-import pinoHttp from "pino-http";
+import pinoHttpModule from "pino-http";
+const pinoHttp = pinoHttpModule as typeof import("pino-http").default;
 import { randomUUID } from "crypto";
 import { logger, loggerStorage } from "./lib/logger.js";
 
