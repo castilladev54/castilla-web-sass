@@ -38,6 +38,10 @@ export const connectDB = async () => {
       // Fix #2 — Pool limitado a 10 por función.
       // Protege el cluster Atlas Free (50 conexiones máx.) ante picos de tráfico.
       maxPoolSize: 10,
+
+      // No permitir que Mongo bloquee la función durante 30s
+      serverSelectionTimeoutMS: 5000,
+      connectTimeoutMS: 5000,
     });
 
     // Fix #3 — Booleano explícito, nunca depender del valor numérico de readyState

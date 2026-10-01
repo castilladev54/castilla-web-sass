@@ -21,10 +21,9 @@ export const slaTimeout = (req, res, next) => {
     // Si ya enviamos headers, no podemos enviar otro response
     if (res.headersSent) return;
 
-    res.status(504).json({
-      success: false,
-      message: "Gateway Timeout — la operación excedió el SLA de respuesta."
-    });
+    const error = new Error("Gateway Timeout — la operación excedió el SLA de respuesta.");
+    error.status = 504;
+    next(error);
   }, SLA_TIMEOUT_MS);
 
   // Limpiar el timer cuando la respuesta se complete normalmente
