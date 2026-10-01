@@ -113,8 +113,9 @@ app.use(cors({
     // Permitir peticiones sin origen (como Postman o curl)
     if (!origin) return callback(null, true);
 
-    if (whitelist.includes(origin)) {
-      callback(null, true)
+    // Permitir orígenes en la whitelist O cualquier subdominio de Vercel
+    if (whitelist.includes(origin) || origin.endsWith('.vercel.app')) {
+      callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
     }
