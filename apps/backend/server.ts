@@ -18,8 +18,7 @@ import { verifyToken } from "./middleware/verifyToken.js";
 import { checkSubscription } from "./middleware/checkSubscription.js";
 import { injectBusinessContext } from "./middleware/requirePermission.js";
 import { slaTimeout } from "./middleware/sla.middleware.js";
-import pinoHttpModule from "pino-http";
-const pinoHttp = pinoHttpModule as typeof import("pino-http").default;
+import { pinoHttp } from "pino-http";
 import { randomUUID } from "crypto";
 import { logger, loggerStorage } from "./lib/logger.js";
 
@@ -62,21 +61,19 @@ app.get(["/favicon.ico", "/favicon.png", "/apple-touch-icon.png"], (req, res) =>
 // 0.5 INTERCEPTOR DE LOGS (Pino & AsyncLocalStorage Context)
 const pinoMiddleware = pinoHttp({
   logger,
-  genReqId: function (req) {
+  genReqId: (req) => {
     const requestId = req.headers["x-request-id"];
 
-    if (typeof requestId === "string") {
-      return requestId;
-    }
-
-    return randomUUID();
+    return typeof requestId === "string"
+      ? requestId
+      : randomUUID();
   },
-  customLogLevel: function (req, res, err) {
-    if (res.statusCode >= 500 || err) return 'error';
-    if (res.statusCode >= 400) return 'warn';
-    return 'info';
+  customLogLevel: (req, res, err) => {
+    if (res.statusCode >= 500 || err) return "error";
+    if (res.statusCode >= 400) return "warn";
+    return "info";
   },
-  customSuccessMessage: function (req, res, responseTime) {
+  customSuccessMessage: (req, res, responseTime) => {
     return `[${req.method}] ${req.url} completed in ${responseTime}ms`;
   },
   serializers: {
@@ -92,12 +89,11 @@ const pinoMiddleware = pinoHttp({
 
 app.use(pinoMiddleware);
 app.use((req, res, next) => {
-  if (req.id) {
+  if (req.id !== undefined) {
     res.setHeader("X-Request-Id", String(req.id));
   }
-  loggerStorage.run(req.log, () => {
-    next();
-  });
+
+  loggerStorage.run(req.log, () => next());
 });
 
 // 1. CORS Y PARSING
