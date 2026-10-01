@@ -37,7 +37,10 @@
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
     "@types/big.js": "^7.0.0",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/hpp": "^0.2.7",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.0.1",
     "mongodb-memory-server": "^11.0.1",
