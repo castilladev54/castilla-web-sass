@@ -141,14 +141,28 @@ app.use(cookieParser());
 
 // 3. LAZY DB CONNECTION (para Vercel serverless: conectar antes de cada request si no está conectado)
 app.use(async (req, res, next) => {
-  if (mongoose.connection.readyState === 0) {
-    try {
-      await connectDB();
-    } catch (err) {
-      return res.status(503).json({ success: false, message: "Service temporarily unavailable" });
-    }
+  if (mongoose.connection.readyState === 1) {
+    return next();
   }
-  next();
+
+  try {
+    await connectDB();
+
+    if (res.headersSent) {
+      return;
+    }
+
+    return next();
+  } catch (err) {
+    if (res.headersSent) {
+      return;
+    }
+
+    return res.status(503).json({
+      success: false,
+      message: "Service temporarily unavailable",
+    });
+  }
 });
 
 // 4. RUTAS PÚBLICAS Y MONITOREO
