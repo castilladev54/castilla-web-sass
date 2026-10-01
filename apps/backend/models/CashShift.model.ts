@@ -85,14 +85,13 @@ const CashShiftSchema = new Schema<ICashShiftDocument>(
   }
 );
 
-CashShiftSchema.pre('validate', function (next) {
+CashShiftSchema.pre('validate', function () {
   if (!this.cashier_id && this.user_id) {
     this.cashier_id = this.user_id;
   }
   if (!this.user_id && this.cashier_id) {
     this.user_id = this.cashier_id;
   }
-  next();
 });
 
 CashShiftSchema.index(

@@ -216,7 +216,10 @@ const startApp = async () => {
     }
   } catch (error) {
     if (process.env.NODE_ENV !== "test") {
-      console.error("❌ Error fatal al iniciar:", error.message);
+      const message =
+        error instanceof Error ? error.message : String(error);
+
+      console.error("❌ Error fatal al iniciar:", message);
       process.exit(1);
     }
   }
