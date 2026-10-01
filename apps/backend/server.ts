@@ -9,13 +9,6 @@ import cookieParser from "cookie-parser";
 import path from "path";
 import mongoose from "mongoose";
 
-
-// ⚠️ Optimizador de V8 para Serialización de Decimal128 (O(1) C++)
-// Evita bucles recursivos en .lean() y .aggregate() al hacer res.json()
-mongoose.Types.Decimal128.prototype.toJSON = function () {
-  return this.toString();
-};
-
 // Configuraciones y Libs
 import { connectDB } from "./lib/db.js";
 import { sanitizeNoSQL } from "./middleware/sanitize.js";
@@ -70,7 +63,13 @@ app.get(["/favicon.ico", "/favicon.png", "/apple-touch-icon.png"], (req, res) =>
 const pinoMiddleware = pinoHttp({
   logger,
   genReqId: function (req) {
-    return req.headers['x-request-id'] || randomUUID();
+    const requestId = req.headers["x-request-id"];
+
+    if (typeof requestId === "string") {
+      return requestId;
+    }
+
+    return randomUUID();
   },
   customLogLevel: function (req, res, err) {
     if (res.statusCode >= 500 || err) return 'error';
@@ -94,7 +93,7 @@ const pinoMiddleware = pinoHttp({
 app.use(pinoMiddleware);
 app.use((req, res, next) => {
   if (req.id) {
-    res.setHeader('X-Request-Id', req.id);
+    res.setHeader("X-Request-Id", String(req.id));
   }
   loggerStorage.run(req.log, () => {
     next();

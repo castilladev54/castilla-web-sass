@@ -1,6 +1,14 @@
 import Big from "big.js";
 import mongoose from "mongoose";
 
+// ⚠️ Optimizador de V8 para Serialización de Decimal128 (O(1) C++)
+// Evita bucles recursivos en .lean() y .aggregate() al hacer res.json()
+Object.defineProperty(mongoose.Types.Decimal128.prototype, "toJSON", {
+  value: function (this: mongoose.Types.Decimal128) {
+    return this.toString();
+  },
+});
+
 type DecimalValue =
   | mongoose.Types.Decimal128
   | string
