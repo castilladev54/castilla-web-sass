@@ -23,3 +23,5 @@ skills-lock.json
 *.njsproj
 *.sln
 *.sw?
+
+.vercel
