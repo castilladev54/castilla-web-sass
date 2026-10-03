@@ -81,8 +81,8 @@ const SettingsGrid = () => {
           </p>
         </button>
 
-        {/* Sucursales (Admin/Customer) */}
-        {(user?.role === 'admin' || user?.role === 'customer') && (
+        {/* Sucursales (Admin/TENANT_OWNER) */}
+        {(user?.role === 'admin' || user?.role === 'TENANT_OWNER') && (
           <button
             className="group flex flex-col p-6 rounded-2xl bg-black/40 border border-white/5 hover:border-pink-500/30 hover:bg-white/5 transition-all duration-300 text-left items-start"
             onClick={() => handleNavigation('branches')}
