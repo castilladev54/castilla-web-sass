@@ -111,6 +111,48 @@ export const updateProductBodySchema = z
 
 export type UpdateProductDTO = z.infer<typeof updateProductBodySchema>;
 
+// ─── CLIENTES ────────────────────────────────────────────────────────────────
+
+export const createCustomerBodySchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, 'El nombre es obligatorio')
+    .max(150, 'El nombre no puede superar los 150 caracteres'),
+
+  email: z
+    .string()
+    .trim()
+    .email('El email no tiene un formato válido')
+    .max(254, 'El email no puede superar los 254 caracteres')
+    .optional(),
+
+  phone: z
+    .string()
+    .trim()
+    .max(30, 'El teléfono no puede superar los 30 caracteres')
+    .optional(),
+
+  document_id: z
+    .string()
+    .trim()
+    .min(1, 'El documento no puede estar vacío')
+    .max(50, 'El documento no puede superar los 50 caracteres')
+    .optional(),
+
+  address: z
+    .string()
+    .trim()
+    .max(300, 'La dirección no puede superar los 300 caracteres')
+    .optional(),
+});
+
+export type CreateCustomerDTO = z.infer<typeof createCustomerBodySchema>;
+
+export const updateCustomerBodySchema = createCustomerBodySchema.partial();
+
+export type UpdateCustomerDTO = z.infer<typeof updateCustomerBodySchema>;
+
 // ─── VENTAS ─────────────────────────────────────────────────────────────────
 
 export const saleItemSchema = z.object({
