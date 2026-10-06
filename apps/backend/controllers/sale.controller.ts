@@ -61,7 +61,7 @@ export const createSale = async (req: Request, res: Response): Promise<any> => {
     }
   }
 
-  const { items, payment_method, exchange_rate } = req.body;
+  const { items, payment_method, exchange_rate, customer_id } = req.body;
 
   // Validación Just-In-Time (JIT) de la tasa de cambio
   if (exchange_rate != null) {
@@ -92,6 +92,7 @@ export const createSale = async (req: Request, res: Response): Promise<any> => {
         payment_method,
         exchange_rate,
         req.cashShift?._id,
+        customer_id ?? null,
         session
       )
     );

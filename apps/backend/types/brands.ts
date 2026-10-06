@@ -8,3 +8,4 @@ export type ActorId = Brand<Types.ObjectId, "ActorId">;
 export type BranchId = Brand<Types.ObjectId, "BranchId">;
 export type ProductId = Brand<Types.ObjectId, "ProductId">;
 export type CategoryId = Brand<Types.ObjectId, "CategoryId">;
+export type CustomerId = Brand<Types.ObjectId, "CustomerId">;

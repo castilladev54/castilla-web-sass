@@ -6,7 +6,8 @@ import { Product } from '../models/Product.js';
 import { Inventory } from '../models/Inventory.js';
 import { StockMovement, StockMovementType } from '../models/StockMovement.js';
 import { Branch } from '../models/Branch.js';
-import { BusinessOwnerId, ActorId, ProductId, BranchId } from '../types/brands.js';
+import { Customer } from '../models/Customer.js';
+import { BusinessOwnerId, ActorId, ProductId, BranchId, CustomerId } from '../types/brands.js';
 import type { PaymentMethod } from '@inventory/shared';
 import { bumpBranchCacheVersion } from '../lib/redis.js';
 import { InsufficientStockError } from '../errors/InsufficientStockError.js';
@@ -47,6 +48,7 @@ export const createSaleProcess = async (
   payment_method: PaymentMethod,
   exchange_rate: string | null,
   shiftId: mongoose.Types.ObjectId | undefined,
+  customerId: CustomerId | null,
   session: mongoose.ClientSession
 ) => {
   // 0. Validar que la sucursal existe y está activa

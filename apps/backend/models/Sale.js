@@ -9,6 +9,11 @@ const saleSchema = new mongoose.Schema({
   },
   customer_id: {
     type: mongoose.Schema.Types.ObjectId,
+    ref: 'Customer',
+    default: null
+  },
+  business_owner_id: {
+    type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
   },
@@ -45,5 +50,9 @@ saleSchema.index({ shift_id: 1 }); // Indexado para acelerar las agregaciones de
 saleSchema.index({ customer_id: 1, createdAt: -1 });
 saleSchema.index({ customer_id: 1, sold_by: 1, createdAt: -1 });
 saleSchema.index({ customer_id: 1, branch_id: 1, createdAt: -1 });
+
+saleSchema.index({ business_owner_id: 1, createdAt: -1 });
+saleSchema.index({ business_owner_id: 1, sold_by: 1, createdAt: -1 });
+saleSchema.index({ business_owner_id: 1, branch_id: 1, createdAt: -1 });
 
 export const Sale = mongoose.model('Sale', saleSchema);
