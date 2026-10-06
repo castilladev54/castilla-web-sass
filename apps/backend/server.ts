@@ -37,6 +37,7 @@ import branchRoutes from "./routes/branch.routes.js";
 import transferRoutes from "./routes/transfer.route.js";
 import webhookRoutes from "./routes/webhook.route.js";
 import shiftRoutes from "./routes/shift.routes.js";
+import customerRoutes from './routes/customer.routes.js';
 
 
 const app = express();
@@ -187,6 +188,7 @@ app.use("/api/rates", protectedRouter, rateRoutes);
 app.use("/api/branches", protectedRouter, branchRoutes);
 app.use("/api/transfers", protectedRouter, transferRoutes);
 app.use("/api/shifts", protectedRouter, shiftRoutes);
+app.use('/api/customers', protectedRouter, customerRoutes);
 
 
 // 5. FRONTEND (Producción local únicamente — en Vercel el frontend es una app separada)

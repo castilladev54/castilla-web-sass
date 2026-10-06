@@ -1,4 +1,4 @@
-import mongoose, { Document, Schema, Types } from 'mongoose';
+import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
 export interface ICustomer extends Document {
   name: string;
@@ -74,6 +74,7 @@ customerSchema.index(
   }
 );
 
-export const Customer =
-  mongoose.models.Customer ??
-  mongoose.model<ICustomer>('Customer', customerSchema);
+
+export const Customer: Model<ICustomer> =
+(mongoose.models.Customer as Model<ICustomer> | undefined) ??
+mongoose.model<ICustomer>('Customer', customerSchema);
