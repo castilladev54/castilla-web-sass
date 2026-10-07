@@ -132,8 +132,8 @@ export const getEmployees = async (req, res) => {
       .lean();
 
     // ── 3. Agregar ventas por empleado en el período solicitado ───────────
-    // Filtramos el scope del negocio (customer_id = ownerId) y la fecha.
-    const salesMatchStage = { customer_id: ownerId };
+    // Filtramos el scope del negocio (business_owner_id = ownerId) y la fecha.
+    const salesMatchStage = { business_owner_id: ownerId };
     if (salesDateFilter) salesMatchStage.createdAt = salesDateFilter;
 
     const salesAgg = await Sale.aggregate([
