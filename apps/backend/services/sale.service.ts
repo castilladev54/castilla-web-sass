@@ -231,7 +231,7 @@ export const fetchSales = async (
   businessOwnerId: BusinessOwnerId,
   sellerId: ActorId | null = null,
 ) => {
-  const filter: Record<string, unknown> = { customer_id: businessOwnerId };
+  const filter: Record<string, unknown> = { business_owner_id: businessOwnerId };
   if (sellerId) filter.sold_by = sellerId;
 
   return Sale.find(filter)
@@ -250,7 +250,7 @@ export const fetchSaleById = async (
 ) => {
   const filter = isEmployee
     ? { _id: id, sold_by: businessOwnerId }
-    : { _id: id, customer_id: businessOwnerId };
+    : { _id: id, business_owner_id: businessOwnerId };
 
   const sale = await Sale.findOne(filter)
     .populate("customer_id", "name email")
@@ -293,7 +293,7 @@ export const updateSaleProcess = async (
   try {
     const sale = await Sale.findOne({
       _id: saleId,
-      customer_id: ownerId,
+      business_owner_id: ownerId,
     }).session(session);
     if (!sale)
       throw new Error("Venta no encontrada o no pertenece a tu negocio.");
@@ -515,7 +515,7 @@ export const cancelSaleProcess = async (
   try {
     const sale = await Sale.findOne({
       _id: saleId,
-      customer_id: ownerId,
+      business_owner_id: ownerId,
     }).session(session);
     if (!sale)
       throw new Error("Venta no encontrada o no pertenece a tu negocio.");
