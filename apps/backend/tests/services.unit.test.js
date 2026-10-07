@@ -26,6 +26,7 @@ import { PurchaseDetail }      from '../models/PurchaseDetail.js';
 import { StockMovement } from '../models/StockMovement.js';
 import { Branch }              from '../models/Branch.ts';
 import { Inventory }     from '../models/Inventory.ts';
+import { CashShift } from '../models/CashShift.model.ts';
 
 // ─── Servicios bajo prueba ────────────────────────────────────────────────────
 import { createSaleProcess, fetchSales, fetchSaleById } from '../services/sale.service.js';
@@ -52,7 +53,7 @@ vi.mock('../mailtrap/emails.js', () => ({
 
 // ─── Infraestructura de BD ────────────────────────────────────────────────────
 let mongoReplSet;
-let userId, categoryId, branchId;
+let userId, categoryId, branchId, shiftId;
 
 beforeAll(async () => {
   mongoReplSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
@@ -80,6 +81,14 @@ beforeAll(async () => {
     is_active: true
   });
   branchId = branch._id;
+
+  const shift = await CashShift.create({
+    branch_id: branchId,
+    user_id: userId,
+    status: 'OPEN',
+    opening_balance: 100,
+  });
+  shiftId = shift._id;
 }, 120000);
 
 afterAll(async () => {
@@ -122,6 +131,35 @@ const createProduct = async (stock = 20, extra = {}) => {
   return product;
 };
 
+const executeSale = async (items, paymentMethod) => {
+  const session = await mongoose.startSession();
+
+  try {
+    session.startTransaction();
+
+    const sale = await createSaleProcess(
+      userId,
+      userId,
+      branchId,
+      items,
+      paymentMethod,
+      null,
+      shiftId,
+      null,
+      session,
+    );
+
+    await session.commitTransaction();
+
+    return sale;
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    await session.endSession();
+  }
+};
+
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 🛒  SALE SERVICE
@@ -131,13 +169,9 @@ describe('sale.service — createSaleProcess()', () => {
   it('✅ commitTransaction: crea Sale + SaleDetail y descuenta stock con datos válidos', async () => {
     const product = await createProduct(20);
 
-    const sale = await createSaleProcess(
-      userId,
-      userId,
-      branchId,
-      [{ product_id: product._id.toString(), quantity: 5, unit_price: 100 }],
-      'Efectivo'
-    );
+    const sale = await executeSale([
+      { product_id: product._id.toString(), quantity: 5, unit_price: 100 }
+    ], 'Efectivo');
 
     // El servicio debe retornar el documento de venta
     expect(sale).toBeDefined();
@@ -159,13 +193,9 @@ describe('sale.service — createSaleProcess()', () => {
   it('✅ commitTransaction con cantidades fraccionarias (kg)', async () => {
     const product = await createProduct(10, { unit_type: 'kg' });
 
-    const sale = await createSaleProcess(
-      userId,
-      userId,
-      branchId,
-      [{ product_id: product._id.toString(), quantity: 3.75, unit_price: 50 }],
-      'Tarjeta'
-    );
+    const sale = await executeSale([
+      { product_id: product._id.toString(), quantity: 3.75, unit_price: 50 }
+    ], 'Tarjeta');
 
     expect(sale.total_amount.toString()).toBe('187.5'); // 3.75 * 50
 
@@ -177,16 +207,10 @@ describe('sale.service — createSaleProcess()', () => {
     const p1 = await createProduct(20, { name: 'Producto A' });
     const p2 = await createProduct(15, { name: 'Producto B' });
 
-    const sale = await createSaleProcess(
-      userId,
-      userId,
-      branchId,
-      [
-        { product_id: p1._id.toString(), quantity: 4, unit_price: 100 }, // 400
-        { product_id: p2._id.toString(), quantity: 2, unit_price: 200 }, // 400
-      ],
-      'Tarjeta'
-    );
+    const sale = await executeSale([
+      { product_id: p1._id.toString(), quantity: 4, unit_price: 100 },
+      { product_id: p2._id.toString(), quantity: 2, unit_price: 200 }
+    ], 'Tarjeta');
 
     expect(sale.total_amount.toString()).toBe('800');
 
@@ -200,13 +224,9 @@ describe('sale.service — createSaleProcess()', () => {
     const product = await createProduct(5); // Solo 5 unidades
 
     await expect(
-      createSaleProcess(
-        userId,
-        userId,
-        branchId,
-        [{ product_id: product._id.toString(), quantity: 50, unit_price: 100 }], // pide 50
-        'Efectivo'
-      )
+      executeSale([
+        { product_id: product._id.toString(), quantity: 50, unit_price: 100 }
+      ], 'Efectivo')
     ).rejects.toThrow('Stock insuficiente');
 
     // ROLLBACK VERIFICADO: el stock NO debe haber cambiado
@@ -224,13 +244,9 @@ describe('sale.service — createSaleProcess()', () => {
     const fakeId = new mongoose.Types.ObjectId().toString();
 
     await expect(
-      createSaleProcess(
-        userId,
-        userId,
-        branchId,
-        [{ product_id: fakeId, quantity: 1, unit_price: 10 }],
-        'Efectivo'
-      )
+      executeSale([
+        { product_id: fakeId, quantity: 1, unit_price: 10 }
+      ], 'Efectivo')
     ).rejects.toThrow('no encontrado');
 
     // Sin datos huérfanos
@@ -249,8 +265,12 @@ describe('sale.service — fetchSales() y fetchSaleById()', () => {
   it('fetchSales retorna solo las ventas del usuario, ordenadas por fecha desc', async () => {
     const product = await createProduct(50);
 
-    await createSaleProcess(userId, userId, branchId, [{ product_id: product._id.toString(), quantity: 1, unit_price: 10 }], 'Efectivo');
-    await createSaleProcess(userId, userId, branchId, [{ product_id: product._id.toString(), quantity: 1, unit_price: 20 }], 'Tarjeta');
+    await executeSale([
+      { product_id: product._id.toString(), quantity: 1, unit_price: 10 }
+    ], 'Efectivo');
+    await executeSale([
+      { product_id: product._id.toString(), quantity: 1, unit_price: 20 }
+    ], 'Tarjeta');
 
     const sales = await fetchSales(userId);
     expect(sales).toHaveLength(2);
@@ -267,13 +287,9 @@ describe('sale.service — fetchSales() y fetchSaleById()', () => {
 
   it('fetchSaleById retorna venta con items populados', async () => {
     const product = await createProduct(20, { name: 'Coca Cola' });
-    const sale = await createSaleProcess(
-      userId,
-      userId,
-      branchId,
-      [{ product_id: product._id.toString(), quantity: 3, unit_price: 15 }],
-      'Divisas'
-    );
+    const sale = await executeSale([
+      { product_id: product._id.toString(), quantity: 3, unit_price: 15 }
+    ], 'Divisas');
 
     const result = await fetchSaleById(sale._id.toString(), userId);
 
