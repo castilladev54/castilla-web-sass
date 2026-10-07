@@ -170,14 +170,15 @@ describe('sale.service — createSaleProcess()', () => {
     const product = await createProduct(20);
 
     const sale = await executeSale([
-      { product_id: product._id.toString(), quantity: 5, unit_price: 100 }
+      { product_id: product._id.toString(), quantity: '5', unit_price: '100' }
     ], 'Efectivo');
 
     // El servicio debe retornar el documento de venta
     expect(sale).toBeDefined();
     expect(sale.total_amount.toString()).toBe('500'); // 5 * 100
     expect(sale.status).toBe('completed');
-    expect(sale.customer_id.toString()).toBe(userId.toString());
+    expect(sale.business_owner_id.toString()).toBe(userId.toString());
+    expect(sale.customer_id).toBeNull();
 
     // Verificar stock descontado en BD (Inventory)
     const updatedInventory = await Inventory.findOne({ product_id: product._id, branch_id: branchId });
@@ -194,7 +195,7 @@ describe('sale.service — createSaleProcess()', () => {
     const product = await createProduct(10, { unit_type: 'kg' });
 
     const sale = await executeSale([
-      { product_id: product._id.toString(), quantity: 3.75, unit_price: 50 }
+      { product_id: product._id.toString(), quantity: '3.75', unit_price: '50' }
     ], 'Tarjeta');
 
     expect(sale.total_amount.toString()).toBe('187.5'); // 3.75 * 50
@@ -208,8 +209,8 @@ describe('sale.service — createSaleProcess()', () => {
     const p2 = await createProduct(15, { name: 'Producto B' });
 
     const sale = await executeSale([
-      { product_id: p1._id.toString(), quantity: 4, unit_price: 100 },
-      { product_id: p2._id.toString(), quantity: 2, unit_price: 200 }
+      { product_id: p1._id.toString(), quantity: '4', unit_price: '100' },
+      { product_id: p2._id.toString(), quantity: '2', unit_price: '200' }
     ], 'Tarjeta');
 
     expect(sale.total_amount.toString()).toBe('800');
@@ -225,7 +226,7 @@ describe('sale.service — createSaleProcess()', () => {
 
     await expect(
       executeSale([
-        { product_id: product._id.toString(), quantity: 50, unit_price: 100 }
+        { product_id: product._id.toString(), quantity: '50', unit_price: '100' }
       ], 'Efectivo')
     ).rejects.toThrow('Stock insuficiente');
 
@@ -245,7 +246,7 @@ describe('sale.service — createSaleProcess()', () => {
 
     await expect(
       executeSale([
-        { product_id: fakeId, quantity: 1, unit_price: 10 }
+        { product_id: fakeId, quantity: '1', unit_price: '10' }
       ], 'Efectivo')
     ).rejects.toThrow('no encontrado');
 
@@ -266,10 +267,10 @@ describe('sale.service — fetchSales() y fetchSaleById()', () => {
     const product = await createProduct(50);
 
     await executeSale([
-      { product_id: product._id.toString(), quantity: 1, unit_price: 10 }
+      { product_id: product._id.toString(), quantity: '1', unit_price: '10' }
     ], 'Efectivo');
     await executeSale([
-      { product_id: product._id.toString(), quantity: 1, unit_price: 20 }
+      { product_id: product._id.toString(), quantity: '1', unit_price: '20' }
     ], 'Tarjeta');
 
     const sales = await fetchSales(userId);
@@ -288,7 +289,7 @@ describe('sale.service — fetchSales() y fetchSaleById()', () => {
   it('fetchSaleById retorna venta con items populados', async () => {
     const product = await createProduct(20, { name: 'Coca Cola' });
     const sale = await executeSale([
-      { product_id: product._id.toString(), quantity: 3, unit_price: 15 }
+      { product_id: product._id.toString(), quantity: '3', unit_price: '15' }
     ], 'Divisas');
 
     const result = await fetchSaleById(sale._id.toString(), userId);
