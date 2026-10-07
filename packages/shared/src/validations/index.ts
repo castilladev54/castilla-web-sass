@@ -164,8 +164,9 @@ export type SaleItemDTO = z.infer<typeof saleItemSchema>;
 
 export const createSaleBodySchema = z.object({
   items: z.array(saleItemSchema).min(1, 'At least one product item is required'),
-  payment_method: z.enum(['Efectivo', 'Divisas', 'Tarjeta', 'Pago Movil', 'Transferencia', 'Zelle'] as const),
+  payment_method: z.enum(['Efectivo', 'Divisas', 'Tarjeta', 'Pago Movil', 'Transferencia', 'Bio Pago', 'Binance', 'Cashea', 'Zelle'] as const),
   exchange_rate: numericString.optional(),
+   customer_id: z.string().regex(OBJECT_ID_REGEX, 'Invalid customer ID format').optional().nullable(),
 });
 export type CreateSaleDTO = z.infer<typeof createSaleBodySchema>;
 
