@@ -399,10 +399,10 @@ export const purgeUserAndData = async (req: Request, res: Response): Promise<voi
     await PurchaseDetail.deleteMany({ purchase_id: { $in: purchaseIds } }).session(session);
     await Purchase.deleteMany({ admin_id: targetUserId }).session(session);
 
-    const userSales = await Sale.find({ customer_id: targetUserId }).session(session);
+    const userSales = await Sale.find({ business_owner_id: targetUserId }).session(session);
     const saleIds = userSales.map(s => s._id);
     await SaleDetail.deleteMany({ sale_id: { $in: saleIds } }).session(session);
-    await Sale.deleteMany({ customer_id: targetUserId }).session(session);
+    await Sale.deleteMany({ business_owner_id: targetUserId }).session(session);
 
     // 2. Eliminar Catálogo del usuario
     await Product.deleteMany({ user: targetUserId }).session(session);
