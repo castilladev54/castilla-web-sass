@@ -282,7 +282,7 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
 
         if (isEmployee) {
           // Empleado: ventas donde ÉL fue el vendedor, acotadas a sus sucursales autorizadas
-          filter.customer_id = ownerId;
+          filter.business_owner_id = ownerId;
           filter.sold_by = req.actorId;
           // 🔒 Restricción de sucursal (Fail-Closed garantizado arriba)
           if (branchIdFilter) {
@@ -290,7 +290,7 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
           }
         } else {
           // Dueño: todas las ventas de su negocio, con filtros opcionales por vendedor y sucursal
-          filter.customer_id = req.businessOwnerId;
+          filter.business_owner_id = req.businessOwnerId;
           if (sellerId) filter.sold_by = sellerId;
           // Filtro opcional por sucursal específica (seleccionada en el frontend)
           if (branchIdFilter && typeof branchIdFilter === "string") {
@@ -308,9 +308,9 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
 
         // Para el aggregation pipeline es estrictamente necesario que los IDs sean ObjectId
         const aggFilter = { ...filter } as Record<string, unknown>;
-        if (aggFilter.customer_id)
-          aggFilter.customer_id = new mongoose.Types.ObjectId(
-            aggFilter.customer_id as string,
+        if (aggFilter.business_owner_id)
+          aggFilter.business_owner_id = new mongoose.Types.ObjectId(
+            aggFilter.business_owner_id as string,
           );
         if (aggFilter.sold_by)
           aggFilter.sold_by = new mongoose.Types.ObjectId(
