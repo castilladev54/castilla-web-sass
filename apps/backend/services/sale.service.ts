@@ -16,8 +16,10 @@ import {
 } from "../types/brands.js";
 import type { PaymentMethod } from "@inventory/shared";
 import { bumpBranchCacheVersion } from "../lib/redis.js";
-import { InsufficientStockError } from "../errors/InsufficientStockError.js";
-import { InvalidCustomerError } from "../errors/InvalidCustomerError.js";
+import {
+  InsufficientStockError,
+  InvalidCustomerError,
+} from "../lib/error.js";
 // ─── DTOs ────────────────────────────────────────────────────────────────────
 
 export interface SaleItemInput {
