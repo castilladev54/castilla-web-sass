@@ -125,13 +125,14 @@ export const createSale = async (req: Request, res: Response): Promise<any> => {
     };
   } catch (error: any) {
     console.error("CREATE SALE ERROR:", error);
-    let status = 500;
+    let status = error.status || 500;
     if (
-      error.message.includes("Stock insuficiente") ||
-      error.message.includes("Freno de emergencia")
+      status === 500 &&
+      (error.message.includes("Stock insuficiente") ||
+        error.message.includes("Freno de emergencia"))
     )
       status = 400;
-    else if (error.message.includes("no encontrado")) status = 404;
+    else if (status === 500 && error.message.includes("no encontrado")) status = 404;
 
     error.status = status;
     throw error;

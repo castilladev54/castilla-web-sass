@@ -17,6 +17,7 @@ import {
 import type { PaymentMethod } from "@inventory/shared";
 import { bumpBranchCacheVersion } from "../lib/redis.js";
 import { InsufficientStockError } from "../errors/InsufficientStockError.js";
+import { InvalidCustomerError } from "../errors/InvalidCustomerError.js";
 // ─── DTOs ────────────────────────────────────────────────────────────────────
 
 export interface SaleItemInput {
@@ -66,6 +67,19 @@ export const createSaleProcess = async (
 
   if (!branch) {
     throw new Error("La sucursal de venta no existe o se encuentra inactiva.");
+  }
+
+  // 0.5 Validar que el cliente pertenece al negocio y está activo (si se provee)
+  if (customerId) {
+    const customer = await Customer.findOne({
+      _id: customerId,
+      businessOwnerId: businessOwnerId,
+      isActive: true,
+    }).session(session);
+
+    if (!customer) {
+      throw new InvalidCustomerError(String(customerId));
+    }
   }
 
   let total_amount = "0";
