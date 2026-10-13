@@ -12,6 +12,7 @@ export type DashboardTab =
   | 'sales_history'
   | 'analytics'
   | 'staff'
+  | 'customers'
   | 'transfers'
   | 'adjustments'
   | 'settings'

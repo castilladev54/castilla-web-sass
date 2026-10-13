@@ -10,3 +10,4 @@ export * from './useExchangeRateQueries';
 export * from './useBranchQueries';
 export * from './useCashShiftQueries';
 export * from './useStockTransferQueries';
+export * from './useCustomerQueries';

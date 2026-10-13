@@ -1,4 +1,4 @@
-import { ShoppingBag, UserPlus, Users, Archive, Store } from 'lucide-react';
+import { ShoppingBag, UserPlus, Users, Archive, Store, User, UserCheck } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useUiStore } from '../../store/uiStore';
 
@@ -22,7 +22,7 @@ const SettingsGrid = () => {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        
+
         {/* Compras */}
         <button
           onClick={() => handleNavigation('purchases')}
@@ -52,7 +52,7 @@ const SettingsGrid = () => {
         </button>
 
         {/* Crear Cliente / Clientes (Solo Admin) */}
-        {user?.role === 'admin' && (
+        {(user?.role === 'admin') && (
           <button
             onClick={() => handleNavigation('adminCreateUser')}
             className="group flex flex-col p-6 rounded-2xl bg-black/40 border border-white/5 hover:border-blue-500/30 hover:bg-white/5 transition-all duration-300 text-left items-start"
@@ -93,6 +93,22 @@ const SettingsGrid = () => {
             <h3 className="text-lg font-semibold text-white mb-2">Sucursales</h3>
             <p className="text-sm text-gray-400 leading-relaxed">
               Añade, edita y gestiona las distintas sucursales del negocio.
+            </p>
+          </button>
+        )}
+
+        {/* Usuario (Admin/TENANT_OWNER) */}
+        {(user?.role === 'admin' || user?.role === 'TENANT_OWNER') && (
+          <button
+            className="group flex flex-col p-6 rounded-2xl bg-black/40 border border-white/5 hover:border-pink-500/30 hover:bg-white/5 transition-all duration-300 text-left items-start"
+            onClick={() => handleNavigation('customers')}
+          >
+            <div className="p-4 rounded-xl bg-pink-500/10 text-pink-400 mb-4 group-hover:scale-110 transition-transform duration-300">
+              <UserCheck size={32} />
+            </div>
+            <h3 className="text-lg font-semibold text-white mb-2">Usuarios</h3>
+            <p className="text-sm text-gray-400 leading-relaxed">
+              Añade, edita y gestiona las distintas cuentas de los usuarios registrados.
             </p>
           </button>
         )}
