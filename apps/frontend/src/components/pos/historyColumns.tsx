@@ -2,7 +2,7 @@ import type { SaleDetailDTO, SaleId } from '@inventory/shared';
 import { fmtUSD } from '../../utils/salesFormatters';
 import { toBs } from '../../utils/currency';
 import Badge from '../atoms/Badge';
-import { Eye, Printer } from 'lucide-react';
+import { Eye } from 'lucide-react';
 import { DataTableColumn } from '../organisms/DataTable.types';
 
 /**
@@ -11,8 +11,7 @@ import { DataTableColumn } from '../organisms/DataTable.types';
  */
 export const buildHistoryColumns = (
   onView: (id: SaleId) => void,
-  exchangeRate: string,
-  onPrint?: (sale: SaleDetailDTO) => void
+  exchangeRate: string
 ): DataTableColumn<SaleDetailDTO>[] => [
   {
     key: 'createdAt',
@@ -71,24 +70,12 @@ export const buildHistoryColumns = (
     key: '_id',
     label: 'Acciones',
     render: (_, row) => (
-      <div className="flex items-center gap-1.5">
-        <button
-          onClick={() => onView(row._id as SaleId)}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-orange-400 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/20 rounded-lg transition-colors"
-        >
-          <Eye size={14} /> Ver
-        </button>
-        {onPrint && (
-          <button
-            type="button"
-            onClick={() => onPrint(row)}
-            title="Imprimir Comprobante"
-            className="flex items-center justify-center p-1.5 text-xs font-medium text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-lg transition-colors"
-          >
-            <Printer size={14} />
-          </button>
-        )}
-      </div>
+      <button
+        onClick={() => onView(row._id as SaleId)}
+        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-orange-400 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/20 rounded-lg transition-colors"
+      >
+        <Eye size={14} /> Ver
+      </button>
     ),
   },
 ];

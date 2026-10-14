@@ -21,11 +21,123 @@ export default function SaleReceiptModal({
 }: SaleReceiptModalProps) {
   const receiptRef = useRef<HTMLDivElement | null>(null);
 
-  if (!isOpen || !sale) return null;
-
   const handlePrint = () => {
-    window.print();
+    const ticketElement = receiptRef.current;
+    if (!ticketElement) return;
+
+    // Crear un iframe invisible para aislar la impresión y evitar pantallas en blanco
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute(
+      'style',
+      'position: fixed; right: 0; bottom: 0; width: 0; height: 0; border: 0; visibility: hidden;'
+    );
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow?.document;
+    if (!doc) {
+      document.body.removeChild(iframe);
+      window.print();
+      return;
+    }
+
+    // Copiar estilos de la aplicación (Tailwind, fuentes, etc.)
+    const styleTags = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+      .map((tag) => tag.outerHTML)
+      .join('\n');
+
+    doc.open();
+    doc.write(`
+      <!DOCTYPE html>
+      <html lang="es">
+        <head>
+          <meta charset="UTF-8">
+          <title>Comprobante_${sale?._id ? sale._id.slice(-8).toUpperCase() : 'Venta'}</title>
+          ${styleTags}
+          <style>
+            @page {
+              margin: 3mm;
+              size: 80mm auto;
+            }
+            *, *::before, *::after {
+              box-sizing: border-box;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            html, body {
+              margin: 0 !important;
+              padding: 0 !important;
+              background-color: #ffffff !important;
+              color: #000000 !important;
+              width: 100% !important;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, monospace;
+            }
+            .ticket-print-wrapper {
+              width: 100%;
+              max-width: 80mm;
+              margin: 0 auto;
+              padding: 4mm;
+              background: #ffffff;
+              color: #000000;
+              font-size: 11px;
+              line-height: 1.35;
+            }
+            /* Fallbacks de layout para garantizar renderizado perfecto */
+            .flex { display: flex !important; }
+            .flex-col { flex-direction: column !important; }
+            .justify-between { justify-content: space-between !important; }
+            .items-center { align-items: center !important; }
+            .items-baseline { align-items: baseline !important; }
+            .text-center { text-align: center !important; }
+            .text-right { text-align: right !important; }
+            .font-bold { font-weight: 700 !important; }
+            .font-black { font-weight: 900 !important; }
+            table { width: 100% !important; border-collapse: collapse !important; }
+            th, td { padding: 3px 2px !important; }
+            .border-b-dashed { border-bottom: 1px dashed #555 !important; }
+            .border-t-dashed { border-top: 1px dashed #555 !important; }
+            .border-dashed { border-style: dashed !important; }
+          </style>
+        </head>
+        <body>
+          <div class="ticket-print-wrapper">
+            ${ticketElement.innerHTML}
+          </div>
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    // Permitir parseo y renderizado de estilos antes de abrir el diálogo de impresión
+    setTimeout(() => {
+      try {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+      } catch (err) {
+        console.error('Error al imprimir comprobante:', err);
+      } finally {
+        setTimeout(() => {
+          if (document.body.contains(iframe)) {
+            document.body.removeChild(iframe);
+          }
+        }, 1500);
+      }
+    }, 250);
   };
+
+  // Atajo de teclado: Ctrl+P o Cmd+P imprime directamente el ticket cuando el modal está abierto
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        handlePrint();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, sale]);
+
+  if (!isOpen || !sale) return null;
 
   const exchangeRate = sale.exchange_rate ?? '0';
   const branch = typeof sale.branch_id === 'object' && sale.branch_id !== null ? sale.branch_id : null;
@@ -67,14 +179,6 @@ export default function SaleReceiptModal({
               <h2 className="text-base font-bold text-white">Comprobante de Venta</h2>
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handlePrint}
-                className="flex items-center gap-1.5 !px-3 !py-1.5 text-xs bg-orange-500 hover:bg-orange-600 text-black font-semibold shadow-lg shadow-orange-500/20"
-              >
-                <Printer size={15} /> Imprimir
-              </Button>
               <button
                 type="button"
                 onClick={onClose}
