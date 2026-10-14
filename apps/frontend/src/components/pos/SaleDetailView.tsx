@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, Printer, User, MapPin, Phone, Mail, FileText, Building2 } from "lucide-react";
+import { ArrowLeft, Printer } from "lucide-react";
 import { fmtUSD, fmtBs } from "../../utils/salesFormatters";
 import Button from "../atoms/Button";
 import type { SaleDetailDTO, UserRole } from '@inventory/shared';
@@ -17,7 +17,7 @@ interface SaleDetailViewProps {
 
 /**
  * SaleDetailView — Vista de detalle de una venta individual.
- * Muestra los metadatos de la venta, datos del cliente, sucursal y la tabla de artículos vendidos.
+ * Muestra los metadatos de la venta y la tabla de artículos vendidos.
  */
 const SaleDetailView = ({
   sale,
@@ -27,9 +27,6 @@ const SaleDetailView = ({
   onEdit,
 }: SaleDetailViewProps) => {
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
-
-  const branch = typeof sale.branch_id === 'object' && sale.branch_id !== null ? sale.branch_id : null;
-  const customer = sale.customer_id ?? null;
 
   return (
     <>
@@ -105,99 +102,6 @@ const SaleDetailView = ({
               <p className={`text-lg font-medium text-white ${cls}`}>{value}</p>
             </div>
           ))}
-        </div>
-
-        {/* Sección de Datos del Cliente y Sucursal */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          {/* Card Cliente */}
-          <div className="p-5 rounded-xl border border-white/10 bg-black/20">
-            <div className="flex items-center gap-2 mb-3 pb-2 border-b border-white/5">
-              <User size={16} className="text-orange-400" />
-              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                Datos del Cliente
-              </h4>
-            </div>
-            {customer ? (
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-400 text-xs">Nombre:</span>
-                  <span className="text-white font-semibold text-base">{customer.name}</span>
-                </div>
-                {customer.document_id && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-400 text-xs">Cédula / Documento:</span>
-                    <span className="text-gray-200 font-mono">{customer.document_id}</span>
-                  </div>
-                )}
-                {customer.phone && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-400 text-xs">Teléfono:</span>
-                    <span className="text-gray-200">{customer.phone}</span>
-                  </div>
-                )}
-                {customer.email && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-400 text-xs">Email:</span>
-                    <span className="text-gray-200 truncate max-w-[220px]">{customer.email}</span>
-                  </div>
-                )}
-                {customer.address && (
-                  <div className="pt-1 border-t border-white/5">
-                    <span className="text-gray-400 text-xs block mb-0.5">Dirección:</span>
-                    <p className="text-orange-300 font-medium text-xs bg-orange-500/10 p-2 rounded-lg border border-orange-500/20">
-                      {customer.address}
-                    </p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <p className="text-gray-500 text-sm italic py-2">
-                Consumidor Final (Venta sin cliente registrado)
-              </p>
-            )}
-          </div>
-
-          {/* Card Sucursal y Negocio */}
-          <div className="p-5 rounded-xl border border-white/10 bg-black/20">
-            <div className="flex items-center gap-2 mb-3 pb-2 border-b border-white/5">
-              <Building2 size={16} className="text-blue-400" />
-              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                Sucursal & Negocio
-              </h4>
-            </div>
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-gray-400 text-xs">Sucursal:</span>
-                <span className="text-white font-semibold text-base">
-                  {branch?.name || "Sucursal Actual"}
-                </span>
-              </div>
-              {branch?.address && (
-                <div className="flex items-start justify-between gap-4">
-                  <span className="text-gray-400 text-xs shrink-0">Dirección Sucursal:</span>
-                  <span className="text-gray-300 text-right text-xs">{branch.address}</span>
-                </div>
-              )}
-              {branch?.phone && (
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-400 text-xs">Teléfono Sucursal:</span>
-                  <span className="text-gray-300">{branch.phone}</span>
-                </div>
-              )}
-              {sale.business_owner_id?.name && (
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-400 text-xs">Negocio:</span>
-                  <span className="text-gray-300">{sale.business_owner_id.name}</span>
-                </div>
-              )}
-              {sale.exchange_rate && (
-                <div className="flex items-center justify-between pt-1 border-t border-white/5">
-                  <span className="text-gray-400 text-xs">Tasa aplicada:</span>
-                  <span className="text-blue-400 font-bold font-mono">1 USD = Bs. {sale.exchange_rate}</span>
-                </div>
-              )}
-            </div>
-          </div>
         </div>
 
       <h3 className="text-lg font-medium text-white mb-4">Artículos Vendidos</h3>
