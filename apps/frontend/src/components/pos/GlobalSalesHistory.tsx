@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import DataTable from '../organisms/DataTable';
 import Button from '../atoms/Button';
 import { Calendar, ChevronDown, Check, X, MapPin, ShoppingCart } from 'lucide-react';
 import { useSalesFilters, DATE_FILTER_OPTIONS } from '../../hooks/useSalesFilters';
 import { useBranchesQuery } from '../../hooks/queries/useBranchQueries';
 import { useExchangeRateQuery } from '../../hooks/queries/useExchangeRateQueries';
-import { useStaffStore } from '../../store/staffStore';
+import { useStaffQuery } from '../../hooks/queries/useStaffQueries';
 import { toBs } from '../../utils/currency';
 import { fmtUSD, fmtBs } from '../../utils/salesFormatters';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -18,7 +18,7 @@ import { useAuthStore } from '../../store/authStore';
 export default function GlobalSalesHistory() {
   const { data: rateData } = useExchangeRateQuery();
   const exchangeRate = rateData?.rate ? String(rateData.rate) : "1";
-  const { staff } = useStaffStore();
+  const { data: staff = [] } = useStaffQuery();
   const { user } = useAuthStore();
   
   const {
@@ -65,8 +65,25 @@ export default function GlobalSalesHistory() {
     setStatusFilter,
   } = useSalesFilters();
 
-  const seller = sellerFilter ? staff.find((e: any) => e._id === sellerFilter) : null;
-  const initial = seller ? seller?.name?.charAt(0).toUpperCase() : 'Σ';
+  const sellerOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    if (user && user._id) {
+      const ownerLabel = user.name ? `${user.name} (Propietario)` : 'Propietario';
+      map.set(user._id, ownerLabel);
+    }
+    staff.forEach((emp: any) => {
+      if (emp._id) map.set(emp._id, emp.name || 'Empleado');
+    });
+    sales.forEach((s: any) => {
+      if (s.sold_by?._id && !map.has(s.sold_by._id)) {
+        map.set(s.sold_by._id, s.sold_by.name || 'Vendedor');
+      }
+    });
+    return Array.from(map.entries()).map(([_id, name]) => ({ _id, name }));
+  }, [user, staff, sales]);
+
+  const seller = sellerFilter ? sellerOptions.find((e) => e._id === sellerFilter) : null;
+  const initial = seller ? seller.name.charAt(0).toUpperCase() : 'Σ';
   const sellerName = seller ? seller.name : 'Todas las ventas';
 
   if (viewedSaleId) {
@@ -329,7 +346,7 @@ export default function GlobalSalesHistory() {
               className="bg-[#1a1a24] border border-white/10 rounded-xl px-3 py-1.5 text-sm text-gray-300 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition outline-none cursor-pointer"
             >
               <option value="">Todos los vendedores</option>
-              {staff.map((emp: any) => (
+              {sellerOptions.map((emp) => (
                 <option key={emp._id} value={emp._id}>
                   {emp.name}
                 </option>
@@ -338,7 +355,7 @@ export default function GlobalSalesHistory() {
             {sellerFilter && (
               <div className="flex items-center gap-1.5 bg-orange-500/10 border border-orange-500/20 text-orange-400 px-3 py-1.5 rounded-xl text-xs font-medium">
                 <span>
-                  Filtrando: {staff.find((e: any) => e._id === sellerFilter)?.name || "Vendedor"}
+                  Filtrando: {sellerOptions.find((e) => e._id === sellerFilter)?.name || "Vendedor"}
                 </span>
                 <button
                   onClick={() => {
