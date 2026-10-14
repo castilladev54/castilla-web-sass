@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import DataTable from '../organisms/DataTable';
 import Button from '../atoms/Button';
 import { Calendar, ChevronDown, Check, X, MapPin, ShoppingCart } from 'lucide-react';
@@ -13,9 +13,12 @@ import { buildHistoryColumns } from './historyColumns';
 import { useSaleDetailActions } from '../../hooks/useSaleDetailActions';
 import SaleDetailView from './SaleDetailView';
 import EditSaleModal from './EditSaleModal';
+import SaleReceiptModal from './SaleReceiptModal';
 import { useAuthStore } from '../../store/authStore';
+import type { SaleDetailDTO } from '@inventory/shared';
 
 export default function GlobalSalesHistory() {
+  const [printingSale, setPrintingSale] = useState<SaleDetailDTO | null>(null);
   const { data: rateData } = useExchangeRateQuery();
   const exchangeRate = rateData?.rate ? String(rateData.rate) : "1";
   const { staff } = useStaffStore();
@@ -425,7 +428,7 @@ export default function GlobalSalesHistory() {
       </div>
 
       <DataTable
-        columns={buildHistoryColumns(handleViewDetail, exchangeRate)}
+        columns={buildHistoryColumns(handleViewDetail, exchangeRate, (sale) => setPrintingSale(sale))}
         data={sales as any}
         isLoading={isSalesLoading}
         emptyMessage={sales.length === 0 ? "Aún no hay ventas" : "Sin ventas en este período"}
@@ -441,6 +444,13 @@ export default function GlobalSalesHistory() {
         currentPage={currentPage}
         totalPages={totalPages}
         onPageChange={setCurrentPage}
+      />
+
+      {/* Modal de Impresión directa desde la tabla */}
+      <SaleReceiptModal
+        isOpen={!!printingSale}
+        onClose={() => setPrintingSale(null)}
+        sale={printingSale}
       />
     </>
   );

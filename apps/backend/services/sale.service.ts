@@ -275,14 +275,16 @@ export const fetchSaleById = async (
     : { _id: id, business_owner_id: businessOwnerId };
 
   const sale = await Sale.findOne(filter)
-    .populate("customer_id", "name email")
+    .populate("customer_id", "name email phone document_id address")
     .populate("sold_by", "name email")
+    .populate("branch_id", "name address phone")
+    .populate("business_owner_id", "name email")
     .lean();
 
   if (!sale) return null;
 
   const items = await SaleDetail.find({ sale_id: id })
-    .populate("product_id", "name price")
+    .populate("product_id", "name price unit_type")
     .lean();
 
   return { ...sale, items };

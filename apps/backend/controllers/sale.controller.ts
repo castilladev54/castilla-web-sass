@@ -347,9 +347,10 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
 
         const [sales, total, totalAmountAgg] = await Promise.all([
           Sale.find(filter)
-            .populate("customer_id", "name email")
+            .populate("customer_id", "name email phone document_id address")
             .populate("sold_by", "name email")
-            .populate("branch_id", "name")
+            .populate("branch_id", "name address phone")
+            .populate("business_owner_id", "name email")
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit)
@@ -438,7 +439,7 @@ export const getSaleById = async (
 
     // Usar contexto inyectado por injectBusinessContext
     const isEmployee = req.userRole === "employee";
-    const cacheKey = `sale:${id}:${req.actorId}`;
+    const cacheKey = `sale:v2:${id}:${req.actorId}`;
 
     // Empleado → busca por sold_by (su ID real)
     // Dueño   → busca por customer_id (ownerId)

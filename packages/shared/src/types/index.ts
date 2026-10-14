@@ -163,6 +163,22 @@ export interface SaleItem {
 
 export type SaleStatus = 'pending' | 'completed' | 'cancelled' | 'Anulada';
 
+export interface SaleCustomerDTO {
+  _id?: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  document_id?: string;
+  address?: string;
+}
+
+export interface SaleBranchDTO {
+  _id: BranchId;
+  name: string;
+  address?: string;
+  phone?: string;
+}
+
 export interface Sale {
   _id: SaleId;
   total_amount: string;
@@ -170,7 +186,9 @@ export interface Sale {
   payment_method: PaymentMethod;
   status: SaleStatus;
   sold_by: UserId | { _id: UserId; name: string } | null;
-  branch_id: BranchId;
+  customer_id?: SaleCustomerDTO | string | null;
+  branch_id: BranchId | SaleBranchDTO;
+  business_owner_id?: { _id: UserId; name: string; email?: string } | UserId | null;
   items: SaleItem[];
   createdAt: string;
   updatedAt?: string;
@@ -192,8 +210,10 @@ export interface SaleDetailDTO {
   exchange_rate: string | null;
   payment_method: PaymentMethod;
   status: 'pending' | 'completed' | 'cancelled' | 'Anulada';
-  sold_by: { _id: UserId; name: string } | null;
-  branch_id: BranchId;
+  sold_by: { _id: UserId; name: string; email?: string } | null;
+  customer_id?: SaleCustomerDTO | null;
+  business_owner_id?: { _id: UserId; name: string; email?: string } | null;
+  branch_id: BranchId | SaleBranchDTO;
   items: SaleDetailItemDTO[];
   createdAt: string;
   updatedAt?: string;
