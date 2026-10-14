@@ -59,6 +59,7 @@ export const createSaleProcess = async (
   shiftId: mongoose.Types.ObjectId | undefined,
   customerId: CustomerId | null,
   session: mongoose.ClientSession,
+  status: "completed" | "pending" = "completed",
 ) => {
   // 0. Validar que la sucursal existe y está activa
   const branch = await Branch.findOne({
@@ -82,6 +83,11 @@ export const createSaleProcess = async (
     if (!customer) {
       throw new InvalidCustomerError(String(customerId));
     }
+  }
+
+  // 0.6 Validar que si la venta es a crédito / pendiente, requiera un cliente
+  if (status === "pending" && !customerId) {
+    throw new Error("Una venta pendiente o a crédito requiere asociar un cliente.");
   }
 
   let total_amount = "0";
@@ -217,7 +223,7 @@ export const createSaleProcess = async (
       ? "Pago Movil"
       : payment_method) as any,
     exchange_rate,
-    status: "completed",
+    status: status || "completed",
   });
   await sale.save({ session });
 
@@ -288,6 +294,7 @@ export interface UpdateSaleInput {
   items?: SaleItemInput[];
   payment_method?: PaymentMethod;
   branchId?: BranchId;
+  status?: "pending" | "completed" | "cancelled";
 }
 
 /**
@@ -301,7 +308,7 @@ export interface UpdateSaleInput {
 export const updateSaleProcess = async (
   saleId: string,
   ownerId: BusinessOwnerId,
-  { items, payment_method, branchId }: UpdateSaleInput,
+  { items, payment_method, branchId, status }: UpdateSaleInput,
 ) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -495,6 +502,10 @@ export const updateSaleProcess = async (
       sale.payment_method = (
         payment_method === "Pago Móvil" ? "Pago Movil" : payment_method
       ) as any;
+    }
+
+    if (status !== undefined) {
+      sale.status = status;
     }
 
     await sale.save({ session });

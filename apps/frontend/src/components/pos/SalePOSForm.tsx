@@ -42,6 +42,8 @@ interface SalePOSFormProps {
   onCustomerChange: (customerId: string) => void;
   isCustomersLoading: boolean;
   isCustomersError: boolean;
+  saleStatus: 'completed' | 'pending';
+  onStatusChange: (status: 'completed' | 'pending') => void;
 }
 
 /**
@@ -79,6 +81,8 @@ const SalePOSForm = ({
   onCustomerChange,
   isCustomersLoading,
   isCustomersError,
+  saleStatus,
+  onStatusChange,
 }: SalePOSFormProps) => {
   return (
     <motion.div
@@ -238,6 +242,8 @@ const SalePOSForm = ({
         onCustomerChange={onCustomerChange}
         isCustomersLoading={isCustomersLoading}
         isCustomersError={isCustomersError}
+        saleStatus={saleStatus}
+        onStatusChange={onStatusChange}
       />
     </motion.div>
   );

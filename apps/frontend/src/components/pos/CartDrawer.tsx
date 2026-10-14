@@ -29,6 +29,8 @@ interface CartDrawerProps {
   onCustomerChange: (customerId: string) => void;
   isCustomersLoading: boolean;
   isCustomersError: boolean;
+  saleStatus: 'completed' | 'pending';
+  onStatusChange: (status: 'completed' | 'pending') => void;
 }
 
 /**
@@ -55,6 +57,8 @@ const CartDrawer = ({
   onCustomerChange,
   isCustomersLoading,
   isCustomersError,
+  saleStatus,
+  onStatusChange,
 }: CartDrawerProps) => (
   <AnimatePresence>
     {isOpen && (
@@ -204,6 +208,32 @@ const CartDrawer = ({
                 </div>
 
                 <div>
+                  <label
+                    htmlFor="sale-status"
+                    className="block text-xs sm:text-sm font-medium text-gray-300 mb-2"
+                  >
+                    Estado de Venta
+                  </label>
+
+                  <select
+                    id="sale-status"
+                    value={saleStatus}
+                    onChange={(event) => onStatusChange(event.target.value as 'completed' | 'pending')}
+                    disabled={isLoading}
+                    className="w-full bg-[#1a1a24] border border-white/10 rounded-xl px-4 py-3 text-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition text-sm sm:text-base font-medium appearance-none"
+                  >
+                    <option value="completed">Al contado (Completada)</option>
+                    <option value="pending">A crédito (Pendiente)</option>
+                  </select>
+
+                  {saleStatus === 'pending' && !selectedCustomerId && (
+                    <p role="status" className="mt-2 text-xs text-amber-400">
+                      ⚠️ Selecciona un cliente arriba para registrar la venta a crédito.
+                    </p>
+                  )}
+                </div>
+
+                <div>
                   <label htmlFor="payment-method" className="block text-xs sm:text-sm font-medium text-gray-300 mb-2">
                     Método de Pago <KBD>F5</KBD>
                   </label>
@@ -255,7 +285,8 @@ const CartDrawer = ({
                   'Procesando...'
                 ) : (
                   <>
-                    <Check size={24} className="mr-2" /> Procesar Pago <KBD>F9</KBD>
+                    <Check size={24} className="mr-2" />
+                    {saleStatus === 'pending' ? 'Registrar Venta a Crédito' : 'Procesar Pago'} <KBD>F9</KBD>
                   </>
                 )}
               </Button>

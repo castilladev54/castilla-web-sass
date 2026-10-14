@@ -39,6 +39,7 @@ export interface CreateSalePayload {
   payment_method: PaymentMethod;
   customer_id?: string | null;
   exchange_rate?: string | null;
+  status?: 'completed' | 'pending';
   signal?: AbortSignal;
   idempotencyKey?: string;
 }
@@ -46,6 +47,7 @@ export interface CreateSalePayload {
 export interface UpdateSalePayload {
   total_amount?: string;
   payment_method?: PaymentMethod;
+  status?: 'pending' | 'completed' | 'cancelled' | 'Anulada';
   items?: SaleItemPayload[];
 }
 
@@ -57,6 +59,7 @@ export interface SaleQueryFilters {
   dateFrom?: string;
   dateTo?: string;
   paymentMethod?: string;
+  status?: string;
   branchId?: string;
   global?: boolean;
 }
@@ -67,6 +70,8 @@ interface SaleListResponse {
   totalPages: number;
   currentPage: number;
   totalAmount?: number;
+  completedAmount?: number;
+  pendingAmount?: number;
 }
 
 // ─── Queries ─────────────────────────────────────────────────────────────────
@@ -82,6 +87,7 @@ export function useSalesQuery(filters: SaleQueryFilters) {
   if (filters.dateFrom) params.set('dateFrom', filters.dateFrom);
   if (filters.dateTo) params.set('dateTo', filters.dateTo);
   if (filters.paymentMethod && filters.paymentMethod !== 'all') params.set('paymentMethod', filters.paymentMethod);
+  if (filters.status && filters.status !== 'all') params.set('status', filters.status);
   if (filters.branchId) params.set('branchId', filters.branchId);
 
   return useQuery<SaleListResponse>({
@@ -98,6 +104,8 @@ export function useSalesQuery(filters: SaleQueryFilters) {
         totalPages: data.totalPages ?? 1,
         currentPage: data.currentPage ?? filters.page,
         totalAmount: data.totalAmount ?? 0,
+        completedAmount: data.completedAmount ?? data.totalAmount ?? 0,
+        pendingAmount: data.pendingAmount ?? 0,
       };
     },
     placeholderData: keepPreviousData,

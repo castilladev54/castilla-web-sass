@@ -41,13 +41,14 @@ export const buildHistoryColumns = (
     key: 'status',
     label: 'Estado',
     render: (value) => {
-      const val = value;
-      const label = val === 'cancelled' || val === 'Anulada' ? val : val ?? 'Completada';
-      return (
-        <Badge variant={val === 'Anulada' || val === 'cancelled' ? 'danger' : 'success'}>
-          {label}
-        </Badge>
-      );
+      const val = value as string;
+      if (val === 'cancelled' || val === 'Anulada') {
+        return <Badge variant="danger">Anulada</Badge>;
+      }
+      if (val === 'pending') {
+        return <Badge variant="warning">Pendiente</Badge>;
+      }
+      return <Badge variant="success">Completada</Badge>;
     },
   },
   {

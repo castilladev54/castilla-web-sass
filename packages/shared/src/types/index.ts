@@ -161,12 +161,14 @@ export interface SaleItem {
   unit_price: string;
 }
 
+export type SaleStatus = 'pending' | 'completed' | 'cancelled' | 'Anulada';
+
 export interface Sale {
   _id: SaleId;
   total_amount: string;
   exchange_rate: string | null;
   payment_method: PaymentMethod;
-  status: 'pending' | 'completed' | 'cancelled' | 'Anulada';
+  status: SaleStatus;
   sold_by: UserId | { _id: UserId; name: string } | null;
   branch_id: BranchId;
   items: SaleItem[];

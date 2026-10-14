@@ -166,7 +166,8 @@ export const createSaleBodySchema = z.object({
   items: z.array(saleItemSchema).min(1, 'At least one product item is required'),
   payment_method: z.enum(['Efectivo', 'Divisas', 'Tarjeta', 'Pago Movil', 'Transferencia', 'Bio Pago', 'Binance', 'Cashea', 'Zelle'] as const),
   exchange_rate: numericString.optional(),
-   customer_id: z.string().regex(OBJECT_ID_REGEX, 'Invalid customer ID format').optional().nullable(),
+  customer_id: z.string().regex(OBJECT_ID_REGEX, 'Invalid customer ID format').optional().nullable(),
+  status: z.enum(['completed', 'pending'] as const).optional(),
 });
 export type CreateSaleDTO = z.infer<typeof createSaleBodySchema>;
 
@@ -175,6 +176,7 @@ export const updateSaleBodySchema = z.object({
   payment_method: z
     .enum(['Efectivo', 'Divisas', 'Tarjeta', 'Pago Movil', 'Transferencia', 'Zelle'] as const)
     .optional(),
+  status: z.enum(['pending', 'completed', 'cancelled', 'Anulada'] as const).optional(),
   items: z.array(saleItemSchema).min(1, 'At least one product item is required').optional(),
 });
 export type UpdateSaleDTO = z.infer<typeof updateSaleBodySchema>;

@@ -24,6 +24,7 @@ export function useSalesFilters() {
   const [dateTo, setDateTo] = useState('');
   const [sellerFilter, setSellerFilter] = useState<string | null>(null);
   const [paymentFilter, setPaymentFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [branchFilter, setBranchFilter] = useState<string | null>(null);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -40,6 +41,7 @@ export function useSalesFilters() {
     const finalDateTo = isEmployee ? undefined : (dateTo || undefined);
     const finalPaymentFilter = isEmployee ? undefined : paymentFilter;
     const finalSellerFilter = isEmployee ? null : sellerFilter;
+    const finalStatusFilter = statusFilter !== 'all' ? statusFilter : undefined;
 
     return {
       page: currentPage,
@@ -49,9 +51,10 @@ export function useSalesFilters() {
       dateFrom: finalDateFrom,
       dateTo: finalDateTo,
       paymentMethod: finalPaymentFilter,
+      status: finalStatusFilter,
       branchId: isEmployee ? undefined : (branchFilter || undefined),
     };
-  }, [currentPage, sellerFilter, dateFilter, dateFrom, dateTo, paymentFilter, isEmployee, branchFilter]);
+  }, [currentPage, sellerFilter, dateFilter, dateFrom, dateTo, paymentFilter, statusFilter, isEmployee, branchFilter]);
 
   // Ejecutar consulta mediante TanStack Query
   // Si es un empleado, o si el filtro es 'custom' pero no tiene rango completo, bloqueamos la consulta para evitar ruido
@@ -89,6 +92,8 @@ export function useSalesFilters() {
   const totalPages = data?.totalPages ?? 1;
   const totalDocs = data?.total ?? 0;
   const filteredTotal = data?.totalAmount ?? 0;
+  const completedTotal = data?.completedAmount ?? data?.totalAmount ?? 0;
+  const pendingTotal = data?.pendingAmount ?? 0;
 
   return {
     sales,
@@ -104,6 +109,8 @@ export function useSalesFilters() {
     setSellerFilter,
     paymentFilter,
     setPaymentFilter,
+    statusFilter,
+    setStatusFilter,
     isDatePickerOpen,
     setIsDatePickerOpen,
     currentPage,
@@ -111,6 +118,8 @@ export function useSalesFilters() {
     datePickerRef,
     activeDateLabel,
     filteredTotal,
+    completedTotal,
+    pendingTotal,
     totalPages,
     totalDocs,
     branchFilter,

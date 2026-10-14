@@ -73,6 +73,12 @@ export default function PosForm({
     setSelectedCustomerId(customerId === '' ? null : customerId);
   }, []);
 
+  const [saleStatus, setSaleStatus] = useState<'completed' | 'pending'>('completed');
+
+  const handleStatusChange = useCallback((status: 'completed' | 'pending') => {
+    setSaleStatus(status);
+  }, []);
+
   const {
     items,
     paymentMethod,
@@ -177,6 +183,10 @@ export default function PosForm({
     e.preventDefault();
     if (items.length === 0) return toast.error("Agrega al menos un artículo");
 
+    if (saleStatus === 'pending' && !selectedCustomerId) {
+      return toast.error("Para registrar una venta a crédito o pendiente debes seleccionar un cliente");
+    }
+
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
@@ -192,6 +202,7 @@ export default function PosForm({
       })),
       payment_method: paymentMethod as PaymentMethod,
       customer_id: selectedCustomerId,
+      status: saleStatus,
       exchange_rate: String(exchangeRate),
       signal: controller.signal,
       idempotencyKey: idempotencyKeyRef.current,
@@ -201,6 +212,7 @@ export default function PosForm({
       onSuccess: () => {
         idempotencyKeyRef.current = null;
         setSelectedCustomerId(null);
+        setSaleStatus('completed');
         toast.success("Venta registrada con éxito");
         resetCart();
         onCancel();
@@ -274,6 +286,8 @@ export default function PosForm({
         onCustomerChange={handleCustomerChange}
         isCustomersLoading={isCustomersLoading}
         isCustomersError={isCustomersError}
+        saleStatus={saleStatus}
+        onStatusChange={handleStatusChange}
       />
     </POSGuardOverlay>
   );

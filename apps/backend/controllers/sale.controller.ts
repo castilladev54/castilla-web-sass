@@ -62,7 +62,7 @@ export const createSale = async (req: Request, res: Response): Promise<any> => {
     }
   }
 
-  const { items, payment_method, exchange_rate, customer_id } = req.body;
+  const { items, payment_method, exchange_rate, customer_id, status } = req.body;
 
   // Validación Just-In-Time (JIT) de la tasa de cambio
   if (exchange_rate != null) {
@@ -103,6 +103,7 @@ export const createSale = async (req: Request, res: Response): Promise<any> => {
         req.cashShift?._id,
         customerId,
         session,
+        status,
       );
     });
 
@@ -194,6 +195,7 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
     const paymentMethod = isEmployee
       ? null
       : (req.query.paymentMethod as string) || null;
+    const statusQuery = (req.query.status as string) || null;
 
     // --- Resolver filtro de fechas ---
     let dateFrom = req.query.dateFrom as string | null;
@@ -269,10 +271,13 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
           : "";
     // Incluir segmento de sucursal en la cache key para evitar colisiones entre sesiones
     const branchSegment = branchIdFilter ? `:br${branchIdFilter}` : "";
+    const statusSegment =
+      statusQuery && statusQuery !== "all" ? `:st${statusQuery}` : "";
     const cacheKey =
       buildPaginatedKey("sales", version, page, limit, cacheScope) +
       (sellerId ? `:s${sellerId}` : "") +
       (paymentMethod && paymentMethod !== "all" ? `:pm${paymentMethod}` : "") +
+      statusSegment +
       dateSegment +
       branchSegment;
 
@@ -305,6 +310,15 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
         // Aplicar filtro de método de pago (exacto, gracias al enum estandarizado)
         if (paymentMethod && paymentMethod !== "all") {
           filter.payment_method = paymentMethod;
+        }
+
+        // Aplicar filtro de estado de la venta
+        if (statusQuery && statusQuery !== "all") {
+          if (statusQuery === "cancelled" || statusQuery === "Anulada") {
+            filter.status = { $in: ["cancelled", "Anulada"] };
+          } else {
+            filter.status = statusQuery;
+          }
         }
 
         // Para el aggregation pipeline es estrictamente necesario que los IDs sean ObjectId
@@ -343,17 +357,55 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
           Sale.countDocuments(filter),
           Sale.aggregate([
             { $match: aggFilter },
-            { $group: { _id: null, totalAmount: { $sum: "$total_amount" } } },
+            {
+              $group: {
+                _id: null,
+                completedAmount: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $and: [
+                          { $ne: ["$status", "pending"] },
+                          { $ne: ["$status", "cancelled"] },
+                          { $ne: ["$status", "Anulada"] },
+                        ],
+                      },
+                      "$total_amount",
+                      0,
+                    ],
+                  },
+                },
+                pendingAmount: {
+                  $sum: {
+                    $cond: [{ $eq: ["$status", "pending"] }, "$total_amount", 0],
+                  },
+                },
+              },
+            },
           ]),
         ]);
 
+        const completedAmount =
+          totalAmountAgg.length > 0 && totalAmountAgg[0].completedAmount != null
+            ? Number(totalAmountAgg[0].completedAmount.toString())
+            : 0;
+
+        const pendingAmount =
+          totalAmountAgg.length > 0 && totalAmountAgg[0].pendingAmount != null
+            ? Number(totalAmountAgg[0].pendingAmount.toString())
+            : 0;
+
         const totalAmount =
-          totalAmountAgg.length > 0 ? totalAmountAgg[0].totalAmount : 0;
+          statusQuery === "pending"
+            ? pendingAmount
+            : completedAmount;
 
         return {
           sales,
           total,
           totalAmount,
+          completedAmount,
+          pendingAmount,
           totalPages: Math.ceil(total / limit),
           currentPage: page,
         };
@@ -366,6 +418,8 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
       sales: data.sales,
       total: data.total,
       totalAmount: data.totalAmount,
+      completedAmount: data.completedAmount,
+      pendingAmount: data.pendingAmount,
       totalPages: data.totalPages,
       currentPage: data.currentPage,
       fromCache,
@@ -455,7 +509,7 @@ export const updateSale = async (
 ): Promise<void> => {
   try {
     const { id } = req.params;
-    const { items, payment_method } = req.body;
+    const { items, payment_method, status } = req.body;
 
     // Solo dueños pueden editar
     if (req.userRole === "employee") {
@@ -472,7 +526,7 @@ export const updateSale = async (
 
     // El servicio transaccional maneja stock, SaleDetails y campos simples en una sola sesión ACID
     const updatedSale = await withTransactionRetry(() =>
-      updateSaleProcess(id as string, ownerId, { items, payment_method }),
+      updateSaleProcess(id as string, ownerId, { items, payment_method, status }),
     );
 
     // Invalidar caché de ventas, productos (si hubo cambios de stock) y la venta individual

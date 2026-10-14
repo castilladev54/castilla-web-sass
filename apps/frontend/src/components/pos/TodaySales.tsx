@@ -34,10 +34,14 @@ export default function TodaySales() {
     currentPage,
     setCurrentPage,
     filteredTotal,
+    completedTotal,
+    pendingTotal,
     totalPages,
     totalDocs,
     activeDateLabel,
-    setDateFilter
+    setDateFilter,
+    statusFilter,
+    setStatusFilter,
   } = useSalesFilters();
 
   const initial = user?.name?.charAt(0).toUpperCase() || 'E';
@@ -105,20 +109,65 @@ export default function TodaySales() {
           <p className="text-white font-bold text-base truncate">Mis Ventas (Sucursal Actual)</p>
           <p className="text-xs text-orange-400/70 mt-0.5">{activeDateLabel}</p>
         </div>
-        <div className="flex gap-6 sm:gap-8">
-          <div className="text-center">
+        <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+          <div className="text-center sm:text-right">
             <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-0.5">
               Ventas
             </p>
-            <p className="text-2xl font-extrabold text-white">{totalDocs}</p>
+            <p className="text-xl sm:text-2xl font-extrabold text-white">{totalDocs}</p>
           </div>
-          <div className="text-center">
-            <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-0.5">
-              Total
-            </p>
-            <p className="text-2xl font-extrabold text-amber-500">{fmtUSD(filteredTotal)}</p>
-            <p className="text-xs text-blue-400">{fmtBs(filteredTotal, exchangeRate)}</p>
-          </div>
+
+          {statusFilter !== 'pending' && (
+            <>
+              <div className="h-8 w-px bg-white/10 hidden sm:block" />
+
+              <div className="text-center sm:text-right">
+                <p className="text-[10px] text-emerald-400 uppercase tracking-widest mb-0.5 font-semibold">
+                  Total Cobrado
+                </p>
+                <p className="text-xl sm:text-2xl font-extrabold text-emerald-400">{fmtUSD(completedTotal)}</p>
+                <p className="text-xs text-blue-400">{fmtBs(completedTotal, exchangeRate)}</p>
+              </div>
+            </>
+          )}
+
+          {statusFilter !== 'completed' && Number(pendingTotal) > 0 && (
+            <>
+              <div className="h-8 w-px bg-white/10 hidden sm:block" />
+
+              <div className="text-center sm:text-right">
+                <p className="text-[10px] text-amber-400 uppercase tracking-widest mb-0.5 font-semibold">
+                  Por Cobrar (Crédito)
+                </p>
+                <p className="text-xl sm:text-2xl font-extrabold text-amber-400">{fmtUSD(pendingTotal)}</p>
+                <p className="text-xs text-blue-400">{fmtBs(pendingTotal, exchangeRate)}</p>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Barra de filtros de estado */}
+      <div className="flex items-center justify-between gap-4 mb-3">
+        <div className="flex items-center gap-2">
+          <label htmlFor="today-status-filter" className="text-xs font-medium text-gray-400">
+            Estado:
+          </label>
+          <select
+            id="today-status-filter"
+            aria-label="Filtrar por estado de venta"
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="bg-[#1a1a24] border border-white/10 rounded-xl px-3 py-1.5 text-sm text-gray-300 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition outline-none cursor-pointer"
+          >
+            <option value="all">Todos los estados</option>
+            <option value="completed">Completadas</option>
+            <option value="pending">Pendientes</option>
+            <option value="cancelled">Anuladas</option>
+          </select>
         </div>
       </div>
 
