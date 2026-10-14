@@ -37,6 +37,7 @@ export interface SaleItemPayload {
 export interface CreateSalePayload {
   items: SaleItemPayload[];
   payment_method: PaymentMethod;
+  customer_id?: string | null;
   exchange_rate?: string | null;
   signal?: AbortSignal;
   idempotencyKey?: string;

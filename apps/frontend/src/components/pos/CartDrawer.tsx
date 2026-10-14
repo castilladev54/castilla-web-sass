@@ -8,6 +8,7 @@ import KBD from '../atoms/KBD';
 import type { FormEvent, RefObject } from 'react';
 
 import type { POSCartItem } from '../../hooks/usePOSCart';
+import type { Customer } from '../../hooks/queries/useCustomerQueries';
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -23,6 +24,11 @@ interface CartDrawerProps {
   exchangeRate: string;
   submitBtnRef?: RefObject<HTMLButtonElement | null>;
   paymentSelectRef?: RefObject<HTMLSelectElement | null>;
+  customers: Customer[];
+  selectedCustomerId: string | null;
+  onCustomerChange: (customerId: string) => void;
+  isCustomersLoading: boolean;
+  isCustomersError: boolean;
 }
 
 /**
@@ -44,6 +50,11 @@ const CartDrawer = ({
   exchangeRate,
   submitBtnRef,
   paymentSelectRef,
+  customers,
+  selectedCustomerId,
+  onCustomerChange,
+  isCustomersLoading,
+  isCustomersError,
 }: CartDrawerProps) => (
   <AnimatePresence>
     {isOpen && (
@@ -161,31 +172,63 @@ const CartDrawer = ({
           {/* Footer / Cobro */}
           <form onSubmit={onSubmit} className="p-4 sm:p-6 bg-black/40 border-t border-white/5 rounded-b-3xl shrink-0">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 items-end">
-              <div>
-                <label htmlFor="payment-method" className="block text-xs sm:text-sm font-medium text-gray-300 mb-2">
-                  Método de Pago <KBD>F5</KBD>
-                </label>
-                <select
-                  id="payment-method"
-                  ref={paymentSelectRef}
-                  value={paymentMethod}
-                  onChange={(e) => onPaymentChange(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      submitBtnRef?.current?.focus();
-                    }
-                  }}
-                  required
-                  className="w-full bg-[#1a1a24] border border-white/10 rounded-xl px-4 py-3 text-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition text-sm sm:text-base font-medium appearance-none"
-                >
-                  <option value="Efectivo">Efectivo</option>
-                  <option value="Divisas">Divisas</option>
-                  <option value="Tarjeta">Tarjeta</option>
-                  <option value="Pago Movil">Pago Móvil</option>
-                  <option value="Transferencia">Transferencia</option>
-                  <option value="Zelle">Zelle</option>
-                </select>
+              <div className="space-y-4">
+                <div>
+                  <label
+                    htmlFor="sale-customer"
+                    className="block text-xs sm:text-sm font-medium text-gray-300 mb-2"
+                  >
+                    Cliente
+                  </label>
+
+                  <select
+                    id="sale-customer"
+                    value={selectedCustomerId ?? ''}
+                    onChange={(event) => onCustomerChange(event.target.value)}
+                    disabled={isCustomersLoading || isLoading}
+                    className="w-full bg-[#1a1a24] border border-white/10 rounded-xl px-4 py-3 text-white"
+                  >
+                    <option value="">Venta sin cliente</option>
+                    {customers.map((customer) => (
+                      <option key={customer._id} value={customer._id}>
+                        {customer.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  {isCustomersError && (
+                    <p role="status" className="mt-2 text-sm text-amber-400">
+                      No se pudieron cargar los clientes. Puedes registrar una venta sin cliente.
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="payment-method" className="block text-xs sm:text-sm font-medium text-gray-300 mb-2">
+                    Método de Pago <KBD>F5</KBD>
+                  </label>
+                  <select
+                    id="payment-method"
+                    ref={paymentSelectRef}
+                    value={paymentMethod}
+                    onChange={(e) => onPaymentChange(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        submitBtnRef?.current?.focus();
+                      }
+                    }}
+                    required
+                    className="w-full bg-[#1a1a24] border border-white/10 rounded-xl px-4 py-3 text-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition text-sm sm:text-base font-medium appearance-none"
+                  >
+                    <option value="Efectivo">Efectivo</option>
+                    <option value="Divisas">Divisas</option>
+                    <option value="Tarjeta">Tarjeta</option>
+                    <option value="Pago Movil">Pago Móvil</option>
+                    <option value="Transferencia">Transferencia</option>
+                    <option value="Zelle">Zelle</option>
+                  </select>
+                </div>
               </div>
 
               <div className="flex flex-col gap-2 sm:gap-3">

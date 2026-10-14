@@ -9,6 +9,7 @@ import CartDrawer from "./CartDrawer";
 import type { POSCartItem } from "../../hooks/usePOSCart";
 import ProductSearchBar from "../molecules/ProductSearchBar";
 import type { FormEvent, RefObject } from "react";
+import type { Customer } from "../../hooks/queries/useCustomerQueries";
 
 
 interface SalePOSFormProps {
@@ -36,6 +37,11 @@ interface SalePOSFormProps {
   onOpenCashShift: () => void; // Acción para abrir caja
   exchangeRate: string;
   getBranchStock: (product: Product) => string;
+  customers: Customer[];
+  selectedCustomerId: string | null;
+  onCustomerChange: (customerId: string) => void;
+  isCustomersLoading: boolean;
+  isCustomersError: boolean;
 }
 
 /**
@@ -68,6 +74,11 @@ const SalePOSForm = ({
   onOpenCashShift,
   exchangeRate,
   getBranchStock,
+  customers,
+  selectedCustomerId,
+  onCustomerChange,
+  isCustomersLoading,
+  isCustomersError,
 }: SalePOSFormProps) => {
   return (
     <motion.div
@@ -222,6 +233,11 @@ const SalePOSForm = ({
         exchangeRate={exchangeRate}
         submitBtnRef={submitBtnRef}
         paymentSelectRef={paymentSelectRef}
+        customers={customers}
+        selectedCustomerId={selectedCustomerId}
+        onCustomerChange={onCustomerChange}
+        isCustomersLoading={isCustomersLoading}
+        isCustomersError={isCustomersError}
       />
     </motion.div>
   );

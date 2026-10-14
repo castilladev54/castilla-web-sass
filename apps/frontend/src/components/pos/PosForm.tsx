@@ -1,16 +1,25 @@
-import React, { FormEvent, useRef, useState, useMemo, useEffect, useCallback } from 'react';
-import { useCreateSale } from '../../hooks/queries/useSaleQueries';
-import { usePOSCart } from '../../hooks/usePOSCart';
-import { useAllProductsForPOS } from '../../hooks/queries/useProductQueries';
-import { useAuthStore } from '../../store/authStore';
-import { useExchangeRateQuery } from '../../hooks/queries/useExchangeRateQueries';
-import { useCurrentCashShiftQuery } from '../../hooks/queries/useCashShiftQueries';
-import { usePOSKeyboard } from '../../hooks/usePOSKeyboard';
-import SalePOSForm from './SalePOSForm';
-import POSGuardOverlay from './POSGuardOverlay';
-import toast from 'react-hot-toast';
-import { PaymentMethod } from '@inventory/shared';
-import type { Product } from '@inventory/shared';
+import React, {
+  FormEvent,
+  useRef,
+  useState,
+  useMemo,
+  useEffect,
+  useCallback,
+} from "react";
+import { useCreateSale } from "../../hooks/queries/useSaleQueries";
+import { usePOSCart } from "../../hooks/usePOSCart";
+import { useAllProductsForPOS } from "../../hooks/queries/useProductQueries";
+import { useAuthStore } from "../../store/authStore";
+import { useExchangeRateQuery } from "../../hooks/queries/useExchangeRateQueries";
+import { useCurrentCashShiftQuery } from "../../hooks/queries/useCashShiftQueries";
+import { usePOSKeyboard } from "../../hooks/usePOSKeyboard";
+import SalePOSForm from "./SalePOSForm";
+import POSGuardOverlay from "./POSGuardOverlay";
+import toast from "react-hot-toast";
+import { PaymentMethod } from "@inventory/shared";
+import type { Product } from "@inventory/shared";
+import { useCustomersQuery } from "../../hooks/queries/useCustomerQueries";
+import type { Customer } from "../../hooks/queries/useCustomerQueries";
 
 interface PosFormProps {
   onCancel: () => void;
@@ -32,13 +41,37 @@ export default function PosForm({
   isCartOpenExternal,
 }: PosFormProps) {
   const createSaleMutation = useCreateSale();
-  const { data: posProducts = [], isLoading: isPosLoading } = useAllProductsForPOS();
+  const { data: posProducts = [], isLoading: isPosLoading } =
+    useAllProductsForPOS();
   const { user, activeBranchId } = useAuthStore();
-  
+
   const { data: rateData } = useExchangeRateQuery();
   const exchangeRate = Number(rateData?.rate ?? 1);
-  
-  const { data: currentShift } = useCurrentCashShiftQuery(activeBranchId, user?._id);
+
+  const { data: currentShift } = useCurrentCashShiftQuery(
+    activeBranchId,
+    user?._id,
+  );
+
+  const {
+    data: customersData,
+    isLoading: isCustomersLoading,
+    isError: isCustomersError,
+  } = useCustomersQuery(1, 100, "");
+
+  const activeCustomers = useMemo(
+    () =>
+      (customersData?.customers ?? []).filter((customer) => customer.isActive),
+    [customersData?.customers],
+  );
+
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(
+    null,
+  );
+
+  const handleCustomerChange = useCallback((customerId: string) => {
+    setSelectedCustomerId(customerId === '' ? null : customerId);
+  }, []);
 
   const {
     items,
@@ -72,26 +105,32 @@ export default function PosForm({
     }
   }, [isScannerOpen, isFormOpen]);
 
-  const handleCloseCart = useCallback((open: boolean) => {
-    if (!open) {
-      if (createSaleMutation.isPending && abortControllerRef.current) {
-        abortControllerRef.current.abort();
-        abortControllerRef.current = null;
+  const handleCloseCart = useCallback(
+    (open: boolean) => {
+      if (!open) {
+        if (createSaleMutation.isPending && abortControllerRef.current) {
+          abortControllerRef.current.abort();
+          abortControllerRef.current = null;
+        }
+        setIsCartOpenExternal(false);
+      } else {
+        setIsCartOpenExternal(true);
       }
-      setIsCartOpenExternal(false);
-    } else {
-      setIsCartOpenExternal(true);
-    }
-  }, [createSaleMutation.isPending, setIsCartOpenExternal]);
+    },
+    [createSaleMutation.isPending, setIsCartOpenExternal],
+  );
 
-  const getBranchStock = useCallback((product: Product): string => {
-    if (!activeBranchId) return "0";
-    return (
-      product.branchInventories?.find(
-        (inventory) => inventory.branch_id === activeBranchId
-      )?.stock ?? "0"
-    );
-  }, [activeBranchId]);
+  const getBranchStock = useCallback(
+    (product: Product): string => {
+      if (!activeBranchId) return "0";
+      return (
+        product.branchInventories?.find(
+          (inventory) => inventory.branch_id === activeBranchId,
+        )?.stock ?? "0"
+      );
+    },
+    [activeBranchId],
+  );
 
   usePOSKeyboard({
     isFormOpen,
@@ -111,7 +150,9 @@ export default function PosForm({
     modifyLastItemQty,
     handleBarcodeScan: async (code: string) => {
       const qty = 1;
-      const local = posProducts.find((p) => p.barcode === code || p._id === code);
+      const local = posProducts.find(
+        (p) => p.barcode === code || p._id === code,
+      );
       if (local) {
         handleAddItem(local, qty, getBranchStock);
         toast.success(`Añadido: ${qty}x ${local.name}`);
@@ -150,6 +191,7 @@ export default function PosForm({
         unit_price: String(i.unit_price),
       })),
       payment_method: paymentMethod as PaymentMethod,
+      customer_id: selectedCustomerId,
       exchange_rate: String(exchangeRate),
       signal: controller.signal,
       idempotencyKey: idempotencyKeyRef.current,
@@ -158,6 +200,7 @@ export default function PosForm({
     createSaleMutation.mutate(payload, {
       onSuccess: () => {
         idempotencyKeyRef.current = null;
+        setSelectedCustomerId(null);
         toast.success("Venta registrada con éxito");
         resetCart();
         onCancel();
@@ -166,11 +209,20 @@ export default function PosForm({
         if (err?.response?.status === 403) {
           idempotencyKeyRef.current = null;
         }
-        if (err.name === "CanceledError" || err.name === "AbortError" || (typeof DOMException !== "undefined" && err instanceof DOMException && err.name === "AbortError")) {
+        if (
+          err.name === "CanceledError" ||
+          err.name === "AbortError" ||
+          (typeof DOMException !== "undefined" &&
+            err instanceof DOMException &&
+            err.name === "AbortError")
+        ) {
           toast.error("Venta cancelada (operación abortada)");
         } else {
-          const errMsg = err?.response?.data?.message 
-            || (!err?.response ? "Error de red: El servidor no responde." : "Error inesperado al registrar la venta");
+          const errMsg =
+            err?.response?.data?.message ||
+            (!err?.response
+              ? "Error de red: El servidor no responde."
+              : "Error inesperado al registrar la venta");
           toast.error(errMsg);
         }
       },
@@ -186,7 +238,7 @@ export default function PosForm({
     return posProducts.filter(
       (p: Product) =>
         p.name.toLowerCase().includes(term) ||
-        (p.barcode && p.barcode.toLowerCase().includes(term))
+        (p.barcode && p.barcode.toLowerCase().includes(term)),
     );
   }, [posProducts, searchTerm]);
 
@@ -217,6 +269,11 @@ export default function PosForm({
         hasOpenShift={!!currentShift}
         onOpenCashShift={onOpenCashShift}
         getBranchStock={getBranchStock}
+        customers={activeCustomers}
+        selectedCustomerId={selectedCustomerId}
+        onCustomerChange={handleCustomerChange}
+        isCustomersLoading={isCustomersLoading}
+        isCustomersError={isCustomersError}
       />
     </POSGuardOverlay>
   );
