@@ -18,6 +18,7 @@ import { RequireBranchGuard } from '../components/guards/RequireBranchGuard';
 import { AiChatWindow } from '../components/organisms/AiChatWindow';
 import SettingsGrid from '../components/settings/SettingsGrid';
 import BranchManager from '../components/settings/BranchManager';
+import CustomerManager from '../components/customers/CustomerManager';
 import { Bot, Sparkles, ShieldAlert } from 'lucide-react';
 
 const DashboardPage = () => {
@@ -68,6 +69,11 @@ const DashboardPage = () => {
           <PermissionGuard requiredPermission="staff_management" fallback={<AccessDenied />}>
             <StaffManager />
           </PermissionGuard>
+        )}
+        {activeTab === 'customers' && (
+          (user?.role === 'admin' || user?.role === 'TENANT_OWNER')
+            ? <CustomerManager />
+            : <AccessDenied />
         )}
         {activeTab === 'transfers' && (
           <PermissionGuard requiredPermission="inventory_access" fallback={<AccessDenied />}>
