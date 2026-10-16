@@ -80,10 +80,10 @@ const EditSaleModal = ({ isOpen, onClose, sale, onSave }: EditSaleModalProps) =>
       { id: sale._id, data: payload },
       {
         onSuccess: async (data) => {
-          // Fuerza a limpiar la caché de ['products'] y ['sales'] de manera simultánea en el bloque onSuccess del useMutation
+          // Fuerza a limpiar la caché de ['products'] y ['sales'] de manera global
           await Promise.all([
-            queryClient.invalidateQueries({ queryKey: ["products", useAuthStore.getState().activeBranchId] }),
-            queryClient.invalidateQueries({ queryKey: saleKeys.all(useAuthStore.getState().activeBranchId) }),
+            queryClient.invalidateQueries({ queryKey: ["products"] }),
+            queryClient.invalidateQueries({ queryKey: ["sales"] }),
           ]);
           onSave(data as any);
         },

@@ -20,7 +20,7 @@ export function useSaleDetailActions() {
   } = useSaleUIStore();
 
   const { data: viewedSale, isLoading, isError } = useQuery<SaleDetailDTO>({
-    queryKey: [...saleKeys.all(activeBranchId), "detail", viewedSaleId],
+    queryKey: ['sales', 'detail', viewedSaleId],
     queryFn: async () => {
       const res = await API.get(`/sales/${viewedSaleId}`);
       return res.data.sale ?? res.data;
@@ -51,8 +51,8 @@ export function useSaleDetailActions() {
   };
 
   const handleUpdateSale = (updatedSale: SaleDetailDTO) => {
-    // La reactividad de React Query actualizará automáticamente 'viewedSale' si configuramos el onMutate correctamente, o podemos forzar invalidación.
-    // Solo cerramos el modal de edición
+    queryClient.invalidateQueries({ queryKey: ['sales'] });
+    queryClient.invalidateQueries({ queryKey: ['products'] });
     useSaleUIStore.setState({ isEditModalOpen: false });
     toast.success("Venta actualizada con éxito");
   };

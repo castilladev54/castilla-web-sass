@@ -57,7 +57,7 @@ const SaleDetailView = ({
               <span>Imprimir</span>
             </Button>
 
-            {userRole === "TENANT_OWNER" && sale.status !== "cancelled" && sale.status !== "Anulada" && (
+            {(userRole === "TENANT_OWNER" || userRole === "admin" || userRole?.toLowerCase() === "tenant_owner") && sale.status !== "cancelled" && sale.status !== "Anulada" && (
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"

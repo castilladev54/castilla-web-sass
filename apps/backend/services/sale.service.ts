@@ -328,16 +328,15 @@ export const updateSaleProcess = async (
     // Usar el branchId de la venta original si no se especifica uno nuevo
     const effectiveBranchId = (branchId ?? sale.branch_id) as BranchId;
 
-    // Validar que la sucursal de destino existe y se encuentra activa
+    // Validar que la sucursal de destino existe y pertenece al negocio
     const branch = await Branch.findOne({
       _id: effectiveBranchId,
       owner_id: ownerId,
-      is_active: true,
     }).session(session);
 
     if (!branch) {
       throw new Error(
-        "La sucursal de destino no existe o se encuentra inactiva.",
+        "La sucursal de destino no existe o no pertenece a tu negocio.",
       );
     }
 
@@ -553,16 +552,15 @@ export const cancelSaleProcess = async (
 
     const effectiveBranchId = sale.branch_id as BranchId;
 
-    // Validar que la sucursal original se encuentra activa
+    // Validar que la sucursal original existe y pertenece al negocio
     const branch = await Branch.findOne({
       _id: effectiveBranchId,
       owner_id: ownerId,
-      is_active: true,
     }).session(session);
 
     if (!branch) {
       throw new Error(
-        "La sucursal de la venta original se encuentra inactiva. No se puede anular la venta.",
+        "La sucursal de la venta original no existe o no pertenece a tu negocio.",
       );
     }
 

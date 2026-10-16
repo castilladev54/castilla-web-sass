@@ -169,15 +169,14 @@ mutationFn: async ({ signal, idempotencyKey, ...payload }) => {
 /** Cancelar una venta — el backend devuelve el stock y marca is_cancelled: true */
 export function useCancelSale() {
   const qc = useQueryClient();
-  const activeBranchId = useAuthStore((s) => s.activeBranchId);
   return useMutation<Sale, Error, SaleId>({
     mutationFn: async (id) => {
       const res = await API.put(`/sales/${id}/cancel`); // Nota: El store legacy usa PUT /sales/:id/cancel
       return (res.data.sale ?? res.data) as Sale;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: saleKeys.all(activeBranchId) });
-      qc.invalidateQueries({ queryKey: ['products', activeBranchId] }); // stock regresa al inventario
+      qc.invalidateQueries({ queryKey: ['sales'] });
+      qc.invalidateQueries({ queryKey: ['products'] }); // stock regresa al inventario
     },
   });
 }
@@ -185,15 +184,14 @@ export function useCancelSale() {
 /** Actualizar una venta (Editar venta) */
 export function useUpdateSale() {
   const qc = useQueryClient();
-  const activeBranchId = useAuthStore((s) => s.activeBranchId);
   return useMutation<Sale, Error, { id: SaleId; data: UpdateSalePayload }>({
     mutationFn: async ({ id, data }) => {
       const res = await API.patch(`/sales/${id}`, data);
       return (res.data.sale ?? res.data) as Sale;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: saleKeys.all(activeBranchId) });
-      qc.invalidateQueries({ queryKey: ['products', activeBranchId] });
+      qc.invalidateQueries({ queryKey: ['sales'] });
+      qc.invalidateQueries({ queryKey: ['products'] });
     },
   });
 }
