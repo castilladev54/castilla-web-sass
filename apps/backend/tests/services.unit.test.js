@@ -64,8 +64,8 @@ vi.mock("../lib/redis.js", () => ({
     data: await fn(),
     fromCache: false,
   })),
-  invalidateCache: vi.fn(async () => {}),
-  bumpBranchCacheVersion: vi.fn(async () => {}),
+  invalidateCache: vi.fn(async () => { }),
+  bumpBranchCacheVersion: vi.fn(async () => { }),
 }));
 
 vi.mock("../mailtrap/emails.js", () => ({
@@ -80,16 +80,16 @@ let mongoReplSet;
 let userId, categoryId, branchId, shiftId;
 
 beforeAll(async () => {
-  mongoReplSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+  mongoReplSet = await MongoMemoryReplSet.create({ replSet: { count: 1 }, instanceOpts: [{ launchTimeout: 60000 }] });
   const mongoUri = mongoReplSet.getUri();
   if (mongoose.connection.readyState !== 0) await mongoose.disconnect();
   await mongoose.connect(mongoUri);
   const lockTimeoutResult = await mongoose.connection.db.admin().command({
-  setParameter: 1,
-  maxTransactionLockRequestTimeoutMillis: 100,
-});
+    setParameter: 1,
+    maxTransactionLockRequestTimeoutMillis: 100,
+  });
 
-console.log("MongoDB lock timeout actualizado:", lockTimeoutResult);
+  console.log("MongoDB lock timeout actualizado:", lockTimeoutResult);
   await new Promise((r) => setTimeout(r, 1500));
 
   const user = await User.create({
@@ -139,7 +139,7 @@ afterEach(async () => {
   await mongoose.connection
     .collection("products")
     .drop()
-    .catch(() => {});
+    .catch(() => { });
   vi.clearAllMocks();
 });
 
