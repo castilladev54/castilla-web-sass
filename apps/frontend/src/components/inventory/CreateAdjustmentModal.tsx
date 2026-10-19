@@ -5,6 +5,8 @@ import InputText from '../atoms/InputText';
 import TextArea from '../atoms/TextArea';
 import { useCreateAdjustment } from '../../hooks/queries/useAdjustmentQueries';
 import { useAllProductsForPOS } from '../../hooks/queries/useProductQueries';
+import { useBranchesQuery } from '../../hooks/queries/useBranchQueries';
+import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 import { Product } from '@inventory/shared';
 
@@ -14,9 +16,12 @@ interface Props {
 }
 
 const CreateAdjustmentModal = ({ isOpen, onClose }: Props) => {
+  const { activeBranchId } = useAuthStore();
+  const { data: branches = [] } = useBranchesQuery();
   const { data: products = [], isLoading: isLoadingProducts } = useAllProductsForPOS();
   const { mutate: createAdjustment, isPending } = useCreateAdjustment();
 
+  const [branchId, setBranchId] = useState(activeBranchId || '');
   const [productId, setProductId] = useState('');
   const [quantity, setQuantity] = useState('');
   const [reason, setReason] = useState<'INITIAL_INVENTORY' | 'CORRECTION' | 'LOSS' | 'DAMAGE' | 'EXPIRED'>('CORRECTION');
@@ -43,6 +48,7 @@ const CreateAdjustmentModal = ({ isOpen, onClose }: Props) => {
     createAdjustment(
       {
         product_id: productId,
+        ...(branchId ? { branch_id: branchId } : {}),
         quantity: qty,
         reason,
         notes: notes.trim(),
@@ -88,6 +94,27 @@ const CreateAdjustmentModal = ({ isOpen, onClose }: Props) => {
           )}
 
           <form id="adjustment-form" onSubmit={handleSubmit} className="space-y-5">
+            {/* Sucursal (opcional si hay múltiples sucursales) */}
+            {branches.length > 1 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1.5">
+                  Sucursal <span className="text-gray-400 text-xs">(Opcional)</span>
+                </label>
+                <select
+                  value={branchId}
+                  onChange={(e) => setBranchId(e.target.value)}
+                  className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+                >
+                  <option value="">Sucursal predeterminada</option>
+                  {branches.map((b) => (
+                    <option key={b._id} value={b._id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* Producto */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-1.5">
@@ -103,7 +130,7 @@ const CreateAdjustmentModal = ({ isOpen, onClose }: Props) => {
                 <option value="">Selecciona un producto...</option>
                 {products.map((p: Product) => (
                   <option key={p._id} value={p._id}>
-                    {p.name} {p.barcode ? `(${p.barcode})` : ''} - Stock actual: {(p as any).stock ?? (p as any).quantity ?? 0}
+                    {p.name} {p.barcode ? `(${p.barcode})` : ''} - Stock actual: {(p as any).stock ?? (p as any).quantity ?? (p as any).totalStock ?? 0}
                   </option>
                 ))}
               </select>

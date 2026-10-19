@@ -42,6 +42,7 @@ export interface AdjustmentsResponse {
 
 export interface CreateAdjustmentPayload {
   product_id: string;
+  branch_id?: string;
   quantity: number;
   reason: 'INITIAL_INVENTORY' | 'CORRECTION' | 'LOSS' | 'DAMAGE' | 'EXPIRED';
   notes?: string;
@@ -62,11 +63,10 @@ export function useAdjustmentsQuery(branchId: BranchId | null, page = 1, limit =
   return useQuery<AdjustmentsResponse>({
     queryKey: adjustmentKeys.list(branchId, page, limit),
     queryFn: async ({ signal }) => {
-      if (!branchId) throw new Error('Se requiere sucursal');
       const res = await api.get(`/adjustments?page=${page}&limit=${limit}`, { signal });
       return res.data;
     },
-    enabled: !!branchId,
+    enabled: true,
   });
 }
 

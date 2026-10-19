@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { createAdjustmentSchema } from '../validations/adjustment.validation.js';
 import { executeAdjustment, fetchAdjustments, fetchAdjustmentsCount } from '../services/adjustment.service.js';
 import { AppError } from '../lib/error.js';
+import { Branch } from '../models/Branch.js';
+import { ROLES } from '../models/User.js';
 import {
   getOrSetCache,
   getCacheVersion,
@@ -20,13 +22,34 @@ export const createAdjustmentController = async (
     }
 
     const { product_id, branch_id, quantity, reason, notes } = parseResult.data;
-    const targetBranchId = branch_id ?? req.branchId;
+    let targetBranchId = (branch_id ?? req.branchId)?.toString();
 
     if (!targetBranchId) {
-      throw new AppError(
-        400,
-        'Debe especificar branch_id en el cuerpo o enviar la cabecera x-branch-id'
-      );
+      if (req.userRole === ROLES.TENANT_OWNER || req.userRole === ROLES.ADMIN) {
+        // Resolver sucursal activa predeterminada del negocio
+        const defaultBranch = await Branch.findOne({
+          owner_id: req.businessOwnerId,
+          is_active: true
+        }).sort({ createdAt: 1 });
+
+        if (defaultBranch) {
+          targetBranchId = defaultBranch._id.toString();
+        } else {
+          // Si el negocio aún no tiene ninguna sucursal registrada, crear la sucursal principal
+          const newBranch = await Branch.create({
+            name: 'Sede Principal',
+            address: 'Sede Principal',
+            is_active: true,
+            owner_id: req.businessOwnerId,
+          });
+          targetBranchId = newBranch._id.toString();
+        }
+      } else {
+        throw new AppError(
+          400,
+          'Debe especificar branch_id en el cuerpo o enviar la cabecera x-branch-id'
+        );
+      }
     }
 
     const idempotencyKey = req.headers['idempotency-key'] as string | undefined;
