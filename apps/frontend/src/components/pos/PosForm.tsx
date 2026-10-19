@@ -18,8 +18,14 @@ import POSGuardOverlay from "./POSGuardOverlay";
 import toast from "react-hot-toast";
 import { PaymentMethod } from "@inventory/shared";
 import type { Product } from "@inventory/shared";
-import { useCustomersQuery } from "../../hooks/queries/useCustomerQueries";
-import type { Customer } from "../../hooks/queries/useCustomerQueries";
+import {
+  useCustomersQuery,
+  useCreateCustomer,
+} from "../../hooks/queries/useCustomerQueries";
+import type {
+  Customer,
+  CustomerPayload,
+} from "../../hooks/queries/useCustomerQueries";
 
 interface PosFormProps {
   onCancel: () => void;
@@ -41,6 +47,7 @@ export default function PosForm({
   isCartOpenExternal,
 }: PosFormProps) {
   const createSaleMutation = useCreateSale();
+  const createCustomerMutation = useCreateCustomer();
   const { data: posProducts = [], isLoading: isPosLoading } =
     useAllProductsForPOS();
   const { user, activeBranchId } = useAuthStore();
@@ -72,6 +79,16 @@ export default function PosForm({
   const handleCustomerChange = useCallback((customerId: string) => {
     setSelectedCustomerId(customerId === '' ? null : customerId);
   }, []);
+
+  const handleCreateCustomer = useCallback(
+    async (payload: CustomerPayload): Promise<void> => {
+      const customer = await createCustomerMutation.mutateAsync(payload);
+
+      setSelectedCustomerId(customer._id);
+      toast.success("Cliente registrado y seleccionado");
+    },
+    [createCustomerMutation],
+  );
 
   const [saleStatus, setSaleStatus] = useState<'completed' | 'pending'>('completed');
 
@@ -284,6 +301,8 @@ export default function PosForm({
         customers={activeCustomers}
         selectedCustomerId={selectedCustomerId}
         onCustomerChange={handleCustomerChange}
+        onCreateCustomer={handleCreateCustomer}
+        isCreatingCustomer={createCustomerMutation.isPending}
         isCustomersLoading={isCustomersLoading}
         isCustomersError={isCustomersError}
         saleStatus={saleStatus}

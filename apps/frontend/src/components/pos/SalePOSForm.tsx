@@ -9,7 +9,7 @@ import CartDrawer from "./CartDrawer";
 import type { POSCartItem } from "../../hooks/usePOSCart";
 import ProductSearchBar from "../molecules/ProductSearchBar";
 import type { FormEvent, RefObject } from "react";
-import type { Customer } from "../../hooks/queries/useCustomerQueries";
+import type { Customer, CustomerPayload } from "../../hooks/queries/useCustomerQueries";
 
 
 interface SalePOSFormProps {
@@ -40,6 +40,8 @@ interface SalePOSFormProps {
   customers: Customer[];
   selectedCustomerId: string | null;
   onCustomerChange: (customerId: string) => void;
+  onCreateCustomer: (payload: CustomerPayload) => Promise<void>;
+  isCreatingCustomer: boolean;
   isCustomersLoading: boolean;
   isCustomersError: boolean;
   saleStatus: 'completed' | 'pending';
@@ -79,6 +81,8 @@ const SalePOSForm = ({
   customers,
   selectedCustomerId,
   onCustomerChange,
+  onCreateCustomer,
+  isCreatingCustomer,
   isCustomersLoading,
   isCustomersError,
   saleStatus,
@@ -240,6 +244,8 @@ const SalePOSForm = ({
         customers={customers}
         selectedCustomerId={selectedCustomerId}
         onCustomerChange={onCustomerChange}
+        onCreateCustomer={onCreateCustomer}
+        isCreatingCustomer={isCreatingCustomer}
         isCustomersLoading={isCustomersLoading}
         isCustomersError={isCustomersError}
         saleStatus={saleStatus}

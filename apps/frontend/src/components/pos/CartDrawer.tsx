@@ -8,7 +8,7 @@ import KBD from '../atoms/KBD';
 import type { FormEvent, RefObject } from 'react';
 
 import type { POSCartItem } from '../../hooks/usePOSCart';
-import type { Customer } from '../../hooks/queries/useCustomerQueries';
+import type { Customer, CustomerPayload } from '../../hooks/queries/useCustomerQueries';
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -27,6 +27,8 @@ interface CartDrawerProps {
   customers: Customer[];
   selectedCustomerId: string | null;
   onCustomerChange: (customerId: string) => void;
+  onCreateCustomer?: (payload: CustomerPayload) => Promise<void>;
+  isCreatingCustomer?: boolean;
   isCustomersLoading: boolean;
   isCustomersError: boolean;
   saleStatus: 'completed' | 'pending';
@@ -55,6 +57,8 @@ const CartDrawer = ({
   customers,
   selectedCustomerId,
   onCustomerChange,
+  onCreateCustomer,
+  isCreatingCustomer,
   isCustomersLoading,
   isCustomersError,
   saleStatus,
