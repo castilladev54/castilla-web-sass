@@ -1,14 +1,19 @@
+import { useState, type FormEvent, type RefObject } from 'react';
+import { isAxiosError } from 'axios';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, ShoppingCart, Trash2, X } from 'lucide-react';
+import { Check, Plus, ShoppingCart, Trash2, X, Users } from 'lucide-react';
 import Big from 'big.js';
 import { fmtUSD, fmtBs, itemSubtotal } from '../../utils/salesFormatters';
 import Button from '../atoms/Button';
 import InputText from '../atoms/InputText';
 import KBD from '../atoms/KBD';
-import type { FormEvent, RefObject } from 'react';
-
+import FormField from '../molecules/FormField';
+import Modal from '../molecules/Modal';
 import type { POSCartItem } from '../../hooks/usePOSCart';
-import type { Customer, CustomerPayload } from '../../hooks/queries/useCustomerQueries';
+import type {
+  Customer,
+  CustomerPayload,
+} from '../../hooks/queries/useCustomerQueries';
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -33,6 +38,37 @@ interface CartDrawerProps {
   isCustomersError: boolean;
   saleStatus: 'completed' | 'pending';
   onStatusChange: (status: 'completed' | 'pending') => void;
+}
+
+const emptyCustomerForm: CustomerPayload = {
+  name: '',
+  document_id: '',
+  phone: '',
+  email: '',
+  address: '',
+};
+
+function getCustomerErrorMessage(error: unknown): string {
+  if (isAxiosError(error)) {
+    const status = error.response?.status;
+    const message = error.response?.data?.message;
+
+    if (status === 409) {
+      return message || 'Ya existe un cliente con ese documento.';
+    }
+
+    if (status === 400) {
+      return message || 'Revisa los datos introducidos.';
+    }
+
+    if (status === 403) {
+      return 'No tienes permisos para registrar este cliente.';
+    }
+
+    return message || 'No se pudo registrar el cliente.';
+  }
+
+  return 'Ocurrió un error inesperado al registrar el cliente.';
 }
 
 /**
@@ -63,8 +99,59 @@ const CartDrawer = ({
   isCustomersError,
   saleStatus,
   onStatusChange,
-}: CartDrawerProps) => (
-  <AnimatePresence>
+}: CartDrawerProps) => {
+  const [isCreateCustomerOpen, setIsCreateCustomerOpen] = useState(false);
+  const [customerForm, setCustomerForm] =
+    useState<CustomerPayload>(emptyCustomerForm);
+  const [customerFormError, setCustomerFormError] = useState('');
+
+  const handleCreateCustomerSubmit = async (
+    event: FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault();
+    setCustomerFormError('');
+
+    const name = customerForm.name.trim();
+
+    if (!name) {
+      setCustomerFormError('El nombre del cliente es obligatorio.');
+      return;
+    }
+
+    if (!onCreateCustomer) {
+      setCustomerFormError('El registro de clientes no está disponible.');
+      return;
+    }
+
+    const payload: CustomerPayload = {
+      name,
+      ...(customerForm.document_id?.trim() && {
+        document_id: customerForm.document_id.trim(),
+      }),
+      ...(customerForm.phone?.trim() && {
+        phone: customerForm.phone.trim(),
+      }),
+      ...(customerForm.email?.trim() && {
+        email: customerForm.email.trim(),
+      }),
+      ...(customerForm.address?.trim() && {
+        address: customerForm.address.trim(),
+      }),
+    };
+
+    try {
+      await onCreateCustomer(payload);
+
+      setCustomerForm({ ...emptyCustomerForm });
+      setCustomerFormError('');
+      setIsCreateCustomerOpen(false);
+    } catch (error: unknown) {
+      setCustomerFormError(getCustomerErrorMessage(error));
+    }
+  };
+
+  return (
+    <AnimatePresence>
     {isOpen && (
       <>
         <motion.div
@@ -189,20 +276,37 @@ const CartDrawer = ({
                     Cliente
                   </label>
 
-                  <select
-                    id="sale-customer"
-                    value={selectedCustomerId ?? ''}
-                    onChange={(event) => onCustomerChange(event.target.value)}
-                    disabled={isCustomersLoading || isLoading}
-                    className="w-full bg-[#1a1a24] border border-white/10 rounded-xl px-4 py-3 text-white"
-                  >
-                    <option value="">Venta sin cliente</option>
-                    {customers.map((customer) => (
-                      <option key={customer._id} value={customer._id}>
-                        {customer.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <select
+                      id="sale-customer"
+                      value={selectedCustomerId ?? ''}
+                      onChange={(event) => onCustomerChange(event.target.value)}
+                      disabled={isCustomersLoading || isLoading}
+                      className="min-w-0 flex-1 bg-[#1a1a24] border border-white/10 rounded-xl px-4 py-3 text-white"
+                    >
+                      <option value="">Venta sin cliente</option>
+                      {customers.map((customer) => (
+                        <option key={customer._id} value={customer._id}>
+                          {customer.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={isLoading || isCreatingCustomer}
+                      onClick={() => {
+                        setCustomerFormError('');
+                        setCustomerForm({ ...emptyCustomerForm });
+                        setIsCreateCustomerOpen(true);
+                      }}
+                      className="shrink-0"
+                    >
+                      <Plus size={16} className="mr-1" />
+                      Registrar cliente
+                    </Button>
+                  </div>
 
                   {isCustomersError && (
                     <p role="status" className="mt-2 text-sm text-amber-400">
@@ -296,10 +400,135 @@ const CartDrawer = ({
               </Button>
             </div>
           </form>
+
+          <Modal
+            isOpen={isCreateCustomerOpen}
+            onClose={() => {
+              if (!isCreatingCustomer) {
+                setIsCreateCustomerOpen(false);
+                setCustomerFormError('');
+              }
+            }}
+            title="Registrar cliente"
+            icon={<Users size={20} className="text-orange-400" />}
+            className="max-h-[90vh] overflow-y-auto"
+          >
+            <form onSubmit={handleCreateCustomerSubmit} className="space-y-4">
+              {customerFormError && (
+                <div
+                  role="alert"
+                  className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300"
+                >
+                  {customerFormError}
+                </div>
+              )}
+
+              <FormField
+                label="Nombre completo"
+                name="name"
+                value={customerForm.name}
+                onChange={(event) =>
+                  setCustomerForm((current) => ({
+                    ...current,
+                    name: event.target.value,
+                  }))
+                }
+                placeholder="Nombre del cliente"
+                required
+                maxLength={150}
+                autoComplete="name"
+              />
+
+              <FormField
+                label="Documento de identidad"
+                name="document_id"
+                value={customerForm.document_id ?? ''}
+                onChange={(event) =>
+                  setCustomerForm((current) => ({
+                    ...current,
+                    document_id: event.target.value,
+                  }))
+                }
+                placeholder="Cédula, RIF u otro documento"
+                maxLength={50}
+              />
+
+              <FormField
+                label="Teléfono"
+                name="phone"
+                type="tel"
+                value={customerForm.phone ?? ''}
+                onChange={(event) =>
+                  setCustomerForm((current) => ({
+                    ...current,
+                    phone: event.target.value,
+                  }))
+                }
+                placeholder="Número de contacto"
+                maxLength={30}
+                autoComplete="tel"
+              />
+
+              <FormField
+                label="Correo electrónico"
+                name="email"
+                type="email"
+                value={customerForm.email ?? ''}
+                onChange={(event) =>
+                  setCustomerForm((current) => ({
+                    ...current,
+                    email: event.target.value,
+                  }))
+                }
+                placeholder="cliente@ejemplo.com"
+                maxLength={254}
+                autoComplete="email"
+              />
+
+              <FormField
+                label="Dirección"
+                name="address"
+                as="textarea"
+                value={customerForm.address ?? ''}
+                onChange={(event) =>
+                  setCustomerForm((current) => ({
+                    ...current,
+                    address: event.target.value,
+                  }))
+                }
+                placeholder="Dirección del cliente"
+                maxLength={300}
+                rows={3}
+              />
+
+              <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={isCreatingCustomer}
+                  onClick={() => {
+                    setIsCreateCustomerOpen(false);
+                    setCustomerFormError('');
+                  }}
+                >
+                  Cancelar
+                </Button>
+
+                <Button
+                  type="submit"
+                  isLoading={isCreatingCustomer}
+                  disabled={isCreatingCustomer}
+                >
+                  Registrar y seleccionar
+                </Button>
+              </div>
+            </form>
+          </Modal>
         </motion.div>
       </>
     )}
   </AnimatePresence>
-);
+  );
+};
 
 export default CartDrawer;

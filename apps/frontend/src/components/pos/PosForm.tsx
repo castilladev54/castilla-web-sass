@@ -66,11 +66,25 @@ export default function PosForm({
     isError: isCustomersError,
   } = useCustomersQuery(1, 100, "");
 
-  const activeCustomers = useMemo(
-    () =>
-      (customersData?.customers ?? []).filter((customer) => customer.isActive),
-    [customersData?.customers],
-  );
+  const [recentlyCreatedCustomer, setRecentlyCreatedCustomer] =
+    useState<Customer | null>(null);
+
+  const activeCustomers = useMemo(() => {
+    const queriedCustomers = (customersData?.customers ?? []).filter(
+      (customer) => customer.isActive,
+    );
+
+    if (
+      recentlyCreatedCustomer?.isActive &&
+      !queriedCustomers.some(
+        (customer) => customer._id === recentlyCreatedCustomer._id,
+      )
+    ) {
+      return [...queriedCustomers, recentlyCreatedCustomer];
+    }
+
+    return queriedCustomers;
+  }, [customersData?.customers, recentlyCreatedCustomer]);
 
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(
     null,
@@ -84,10 +98,12 @@ export default function PosForm({
     async (payload: CustomerPayload): Promise<void> => {
       const customer = await createCustomerMutation.mutateAsync(payload);
 
+      setRecentlyCreatedCustomer(customer);
       setSelectedCustomerId(customer._id);
+
       toast.success("Cliente registrado y seleccionado");
     },
-    [createCustomerMutation],
+    [createCustomerMutation.mutateAsync],
   );
 
   const [saleStatus, setSaleStatus] = useState<'completed' | 'pending'>('completed');
