@@ -168,121 +168,142 @@ const CartDrawer = ({
           animate={{ y: 0 }}
           exit={{ y: '-100%' }}
           transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-          className="absolute top-0 left-0 right-0 z-40 bg-[#1a1a24] border-b border-orange-500/30 shadow-2xl shadow-orange-500/10 rounded-b-3xl flex flex-col max-h-[90vh]"
+          className="fixed sm:absolute top-0 left-0 right-0 z-40 bg-[#1a1a24] border-b border-orange-500/30 shadow-2xl shadow-orange-500/10 rounded-b-2xl sm:rounded-b-3xl flex flex-col h-[100dvh] sm:h-auto sm:max-h-[90vh] overflow-hidden"
         >
           {/* Header */}
-          <div className="p-4 border-b border-white/5 flex justify-between items-center bg-black/20">
+          <header className="p-3.5 sm:p-4 border-b border-white/5 flex justify-between items-center bg-black/20 shrink-0">
             <h3 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
               <ShoppingCart className="text-orange-500" aria-hidden="true" /> Detalle de Compra
             </h3>
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 onClose();
               }}
               aria-label="Cerrar carrito"
-              className="p-2 text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition"
+              className="p-2 text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition focus:outline-none focus:ring-2 focus:ring-orange-500"
             >
               <X size={20} />
             </button>
-          </div>
+          </header>
 
-          {/* Items */}
-          <div className="p-4 sm:p-6 overflow-y-auto flex-1 min-h-[30vh]">
-            {items.length === 0 ? (
-              <div className="py-10 flex flex-col items-center justify-center text-gray-500">
-                <ShoppingCart size={48} className="mb-4 opacity-30" aria-hidden="true" />
-                <p className="text-lg text-center">No has agregado productos</p>
-              </div>
-            ) : (
-              <ul className="space-y-3">
-                {items.map((item, index) => (
-                  <li
-                    key={index}
-                    className="flex flex-col sm:flex-row sm:justify-between sm:items-center bg-black/30 p-3 sm:p-4 rounded-xl border border-white/5"
-                  >
-                    <div className="flex-1 mb-3 sm:mb-0">
-                      <h5 className="text-white font-medium text-sm sm:text-base line-clamp-1">
-                        {item.name}
-                        {(item.unit_type ?? "unidad") !== "unidad" ? ` (${item.unit_type})` : ''}
-                      </h5>
-                      <div className="flex gap-4 items-center mt-1">
-                        <span className="text-orange-500 font-bold">{fmtUSD(item.unit_price)}</span>
-                        <span className="text-blue-400 text-xs sm:text-sm font-medium">{fmtBs(item.unit_price, exchangeRate)}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
-                      <div className={`flex items-center gap-2 rounded-xl border p-1 transition-colors ${
-                        (() => {
-                          try {
-                            const maxStock = new Big(item.maxStock || "0");
-                            const qty = new Big(item.quantity || "0");
-                            return maxStock.lt(qty);
-                          } catch {
-                            return false;
-                          }
-                        })()
-                          ? 'bg-red-500/10 border-red-500/50'
-                          : 'bg-[#1a1a24] border-white/10'
-                      }`}>
-                        <InputText
-                          type="number"
-                          min={item.unit_type === "unidad" ? "1" : "0.01"}
-                          step={item.unit_type === "unidad" ? "1" : "0.01"}
-                          value={item.quantity}
-                          onChange={(e) => onQtyChange(index, e.target.value)}
-                          aria-label={`Cantidad de ${item.name}`}
-                          className={`w-16 sm:w-20 text-center text-base sm:text-lg font-bold bg-transparent border-none h-10 p-0 focus:ring-0 ${
+          {/* Formulario de Venta y Cobro */}
+          <form onSubmit={onSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            {/* Contenido desplazable: Productos y Datos de Venta */}
+            <div className="p-3 sm:p-6 overflow-y-auto flex-1 min-h-0 space-y-3 sm:space-y-4">
+              {/* Sección de productos */}
+              <section aria-label="Productos en el carrito">
+                {items.length === 0 ? (
+                  <div className="py-8 sm:py-10 flex flex-col items-center justify-center text-gray-500">
+                    <ShoppingCart size={44} className="mb-3 opacity-30" aria-hidden="true" />
+                    <p className="text-base sm:text-lg text-center">No has agregado productos</p>
+                  </div>
+                ) : (
+                  <ul className="space-y-2.5 sm:space-y-3">
+                    {items.map((item, index) => (
+                      <li
+                        key={index}
+                        className="flex flex-col sm:flex-row sm:justify-between sm:items-center bg-black/30 p-3 sm:p-4 rounded-xl border border-white/5"
+                      >
+                        <div className="flex-1 mb-2.5 sm:mb-0">
+                          <h5 className="text-white font-medium text-sm sm:text-base line-clamp-1">
+                            {item.name}
+                            {(item.unit_type ?? "unidad") !== "unidad" ? ` (${item.unit_type})` : ''}
+                          </h5>
+                          <div className="flex gap-3 sm:gap-4 items-center mt-1">
+                            <span className="text-orange-500 font-bold text-sm sm:text-base">{fmtUSD(item.unit_price)}</span>
+                            <span className="text-blue-400 text-xs sm:text-sm font-medium">{fmtBs(item.unit_price, exchangeRate)}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                          <div className={`flex items-center gap-2 rounded-xl border p-1 transition-colors ${
                             (() => {
                               try {
-                                return new Big(item.maxStock || "0").lt(new Big(item.quantity || "0"));
+                                const maxStock = new Big(item.maxStock || "0");
+                                const qty = new Big(item.quantity || "0");
+                                return maxStock.lt(qty);
                               } catch {
                                 return false;
                               }
-                            })() ? 'text-red-400' : ''
-                          }`}
-                        />
-                      </div>
-                      <div className="text-right w-20 sm:w-24 ml-auto">
-                        <span className="text-amber-500 font-bold text-base sm:text-lg">
-                          {fmtUSD(itemSubtotal({ ...item, unit_type: item.unit_type ?? "unidad" }))}
-                        </span>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        type="button"
-                        onClick={() => onRemove(index)}
-                        aria-label={`Quitar ${item.name}`}
-                        className="text-red-400 hover:bg-red-500/20 hover:text-red-300 !p-2 sm:!p-3 rounded-xl ml-2"
+                            })()
+                              ? 'bg-red-500/10 border-red-500/50'
+                              : 'bg-[#1a1a24] border-white/10'
+                          }`}>
+                            <InputText
+                              type="number"
+                              min={item.unit_type === "unidad" ? "1" : "0.01"}
+                              step={item.unit_type === "unidad" ? "1" : "0.01"}
+                              value={item.quantity}
+                              onChange={(e) => onQtyChange(index, e.target.value)}
+                              aria-label={`Cantidad de ${item.name}`}
+                              className={`w-16 sm:w-20 text-center text-base sm:text-lg font-bold bg-transparent border-none h-9 sm:h-10 p-0 focus:ring-0 ${
+                                (() => {
+                                  try {
+                                    return new Big(item.maxStock || "0").lt(new Big(item.quantity || "0"));
+                                  } catch {
+                                    return false;
+                                  }
+                                })() ? 'text-red-400' : ''
+                              }`}
+                            />
+                          </div>
+                          <div className="text-right w-20 sm:w-24 ml-auto">
+                            <span className="text-amber-500 font-bold text-base sm:text-lg">
+                              {fmtUSD(itemSubtotal({ ...item, unit_type: item.unit_type ?? "unidad" }))}
+                            </span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            type="button"
+                            onClick={() => onRemove(index)}
+                            aria-label={`Quitar ${item.name}`}
+                            className="text-red-400 hover:bg-red-500/20 hover:text-red-300 !p-2 sm:!p-3 rounded-xl ml-2"
+                          >
+                            <Trash2 size={18} />
+                          </Button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+
+              {/* Datos de la Venta (Cliente, Estado, Método) */}
+              <section
+                aria-label="Configuración de la venta"
+                className="bg-black/30 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-white/5 space-y-3 sm:space-y-4"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
+                  {/* Cliente */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1.5">
+                      <label
+                        htmlFor="sale-customer"
+                        className="block text-xs sm:text-sm font-medium text-gray-300"
                       >
-                        <Trash2 size={20} />
-                      </Button>
+                        Cliente
+                      </label>
+                      <button
+                        type="button"
+                        disabled={isLoading || isCreatingCustomer}
+                        onClick={() => {
+                          setCustomerFormError('');
+                          setCustomerForm({ ...emptyCustomerForm });
+                          setIsCreateCustomerOpen(true);
+                        }}
+                        className="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1 font-medium transition cursor-pointer"
+                      >
+                        <Plus size={14} /> Registrar cliente
+                      </button>
                     </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
 
-          {/* Footer / Cobro */}
-          <form onSubmit={onSubmit} className="p-4 sm:p-6 bg-black/40 border-t border-white/5 rounded-b-3xl shrink-0">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 items-end">
-              <div className="space-y-4">
-                <div>
-                  <label
-                    htmlFor="sale-customer"
-                    className="block text-xs sm:text-sm font-medium text-gray-300 mb-2"
-                  >
-                    Cliente
-                  </label>
-
-                  <div className="flex flex-col sm:flex-row gap-2">
                     <select
                       id="sale-customer"
                       value={selectedCustomerId ?? ''}
                       onChange={(event) => onCustomerChange(event.target.value)}
                       disabled={isCustomersLoading || isLoading}
-                      className="min-w-0 flex-1 bg-[#1a1a24] border border-white/10 rounded-xl px-4 py-3 text-white"
+                      className="w-full bg-[#1a1a24] border border-white/10 rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 text-white text-sm sm:text-base focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition"
                     >
                       <option value="">Venta sin cliente</option>
                       {customers.map((customer) => (
@@ -292,113 +313,104 @@ const CartDrawer = ({
                       ))}
                     </select>
 
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      disabled={isLoading || isCreatingCustomer}
-                      onClick={() => {
-                        setCustomerFormError('');
-                        setCustomerForm({ ...emptyCustomerForm });
-                        setIsCreateCustomerOpen(true);
-                      }}
-                      className="shrink-0"
-                    >
-                      <Plus size={16} className="mr-1" />
-                      Registrar cliente
-                    </Button>
+                    {isCustomersError && (
+                      <p role="status" className="mt-1.5 text-xs text-amber-400">
+                        No se pudieron cargar los clientes. Puedes registrar una venta sin cliente.
+                      </p>
+                    )}
                   </div>
 
-                  {isCustomersError && (
-                    <p role="status" className="mt-2 text-sm text-amber-400">
-                      No se pudieron cargar los clientes. Puedes registrar una venta sin cliente.
-                    </p>
-                  )}
+                  {/* Estado de Venta */}
+                  <div>
+                    <label
+                      htmlFor="sale-status"
+                      className="block text-xs sm:text-sm font-medium text-gray-300 mb-1.5"
+                    >
+                      Estado de Venta
+                    </label>
+
+                    <select
+                      id="sale-status"
+                      value={saleStatus}
+                      onChange={(event) => onStatusChange(event.target.value as 'completed' | 'pending')}
+                      disabled={isLoading}
+                      className="w-full bg-[#1a1a24] border border-white/10 rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 text-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition text-sm sm:text-base font-medium appearance-none"
+                    >
+                      <option value="completed">Al contado (Completada)</option>
+                      <option value="pending">A crédito (Pendiente)</option>
+                    </select>
+
+                    {saleStatus === 'pending' && !selectedCustomerId && (
+                      <p role="status" className="mt-1.5 text-xs text-amber-400">
+                        ⚠️ Selecciona un cliente arriba para registrar la venta a crédito.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Método de Pago */}
+                  <div>
+                    <label htmlFor="payment-method" className="block text-xs sm:text-sm font-medium text-gray-300 mb-1.5">
+                      Método de Pago <span className="hidden sm:inline"><KBD>F5</KBD></span>
+                    </label>
+                    <select
+                      id="payment-method"
+                      ref={paymentSelectRef}
+                      value={paymentMethod}
+                      onChange={(e) => onPaymentChange(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          submitBtnRef?.current?.focus();
+                        }
+                      }}
+                      required
+                      className="w-full bg-[#1a1a24] border border-white/10 rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 text-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition text-sm sm:text-base font-medium appearance-none"
+                    >
+                      <option value="Efectivo">Efectivo</option>
+                      <option value="Divisas">Divisas</option>
+                      <option value="Tarjeta">Tarjeta</option>
+                      <option value="Pago Movil">Pago Móvil</option>
+                      <option value="Transferencia">Transferencia</option>
+                      <option value="Zelle">Zelle</option>
+                    </select>
+                  </div>
                 </div>
+              </section>
+            </div>
 
-                <div>
-                  <label
-                    htmlFor="sale-status"
-                    className="block text-xs sm:text-sm font-medium text-gray-300 mb-2"
-                  >
-                    Estado de Venta
-                  </label>
-
-                  <select
-                    id="sale-status"
-                    value={saleStatus}
-                    onChange={(event) => onStatusChange(event.target.value as 'completed' | 'pending')}
-                    disabled={isLoading}
-                    className="w-full bg-[#1a1a24] border border-white/10 rounded-xl px-4 py-3 text-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition text-sm sm:text-base font-medium appearance-none"
-                  >
-                    <option value="completed">Al contado (Completada)</option>
-                    <option value="pending">A crédito (Pendiente)</option>
-                  </select>
-
-                  {saleStatus === 'pending' && !selectedCustomerId && (
-                    <p role="status" className="mt-2 text-xs text-amber-400">
-                      ⚠️ Selecciona un cliente arriba para registrar la venta a crédito.
-                    </p>
-                  )}
+            {/* Pie fijado (Sticky Footer): Totales y Botón de Cobro */}
+            <footer className="p-3 sm:p-5 bg-[#14141c]/95 border-t border-white/10 shrink-0 backdrop-blur-md">
+              <div className="flex items-center justify-between gap-3 mb-2.5 sm:mb-4">
+                <div className="flex flex-col">
+                  <span className="text-[11px] sm:text-xs text-gray-400 font-medium uppercase tracking-wider">Total Bs</span>
+                  <span className="text-sm sm:text-lg font-bold text-blue-400">{fmtBs(currentTotal, exchangeRate)}</span>
                 </div>
-
-                <div>
-                  <label htmlFor="payment-method" className="block text-xs sm:text-sm font-medium text-gray-300 mb-2">
-                    Método de Pago <KBD>F5</KBD>
-                  </label>
-                  <select
-                    id="payment-method"
-                    ref={paymentSelectRef}
-                    value={paymentMethod}
-                    onChange={(e) => onPaymentChange(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        submitBtnRef?.current?.focus();
-                      }
-                    }}
-                    required
-                    className="w-full bg-[#1a1a24] border border-white/10 rounded-xl px-4 py-3 text-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition text-sm sm:text-base font-medium appearance-none"
-                  >
-                    <option value="Efectivo">Efectivo</option>
-                    <option value="Divisas">Divisas</option>
-                    <option value="Tarjeta">Tarjeta</option>
-                    <option value="Pago Movil">Pago Móvil</option>
-                    <option value="Transferencia">Transferencia</option>
-                    <option value="Zelle">Zelle</option>
-                  </select>
+                <div className="flex items-center gap-2 bg-orange-500/10 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl border border-orange-500/20">
+                  <span className="text-xs sm:text-sm text-orange-400 font-medium">Total a Pagar:</span>
+                  <span className="text-base sm:text-2xl font-bold text-orange-500">{fmtUSD(currentTotal)}</span>
                 </div>
               </div>
 
-              <div className="flex flex-col gap-2 sm:gap-3">
-                <div className="flex justify-between items-center text-lg sm:text-xl font-bold text-gray-300">
-                  <span className="text-sm sm:text-base">Total Bs</span>
-                  <span className="text-blue-400">{fmtBs(currentTotal, exchangeRate)}</span>
-                </div>
-                <div className="flex justify-between items-center text-xl sm:text-2xl font-bold text-white bg-orange-500/10 p-3 rounded-xl border border-orange-500/20">
-                  <span className="text-base sm:text-lg text-orange-400">Total a Pagar</span>
-                  <span className="text-orange-500">{fmtUSD(currentTotal)}</span>
-                </div>
+              <div>
+                <Button
+                  ref={submitBtnRef}
+                  variant="primary"
+                  type="submit"
+                  disabled={isLoading || items.length === 0}
+                  className="w-full py-3 sm:py-4 text-base sm:text-lg rounded-xl shadow-[0_0_20px_rgba(249,115,22,0.3)] font-bold flex items-center justify-center transition-transform active:scale-[0.99]"
+                >
+                  {isLoading ? (
+                    'Procesando...'
+                  ) : (
+                    <>
+                      <Check size={20} className="mr-2" />
+                      <span>{saleStatus === 'pending' ? 'Registrar Venta a Crédito' : 'Procesar Pago'}</span>
+                      <span className="hidden sm:inline-block ml-1.5"><KBD>F9</KBD></span>
+                    </>
+                  )}
+                </Button>
               </div>
-            </div>
-
-            <div className="mt-4 sm:mt-6">
-              <Button
-                ref={submitBtnRef}
-                variant="primary"
-                type="submit"
-                disabled={isLoading || items.length === 0}
-                className="w-full py-4 text-base sm:text-lg rounded-xl shadow-[0_0_20px_rgba(249,115,22,0.3)]"
-              >
-                {isLoading ? (
-                  'Procesando...'
-                ) : (
-                  <>
-                    <Check size={24} className="mr-2" />
-                    {saleStatus === 'pending' ? 'Registrar Venta a Crédito' : 'Procesar Pago'} <KBD>F9</KBD>
-                  </>
-                )}
-              </Button>
-            </div>
+            </footer>
           </form>
 
           <Modal
