@@ -98,9 +98,9 @@ CashShiftSchema.index(
   { branch_id: 1, cashier_id: 1, status: 1 },
   {
     unique: true,
-    sparse: true,
     partialFilterExpression: { status: 'OPEN', cashier_id: { $exists: true } },
   }
 );
+
 
 export const CashShift = model<ICashShiftDocument>('CashShift', CashShiftSchema);

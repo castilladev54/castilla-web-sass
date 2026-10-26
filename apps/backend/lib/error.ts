@@ -40,3 +40,51 @@ export class InvalidCustomerError extends AppError {
     this.customerId = customerId;
   }
 }
+
+export class SaleNotFoundError extends AppError {
+  constructor(message = 'Venta no encontrada o no pertenece a este negocio.') {
+    super(404, message);
+    this.name = 'SaleNotFoundError';
+  }
+}
+
+export class InvalidSaleStatusError extends AppError {
+  constructor(status: string) {
+    super(400, `La venta no está pendiente (estado actual: ${status}).`);
+    this.name = 'InvalidSaleStatusError';
+  }
+}
+
+export class SaleMissingCustomerError extends AppError {
+  constructor(message = 'La venta no tiene un cliente asociado.') {
+    super(400, message);
+    this.name = 'SaleMissingCustomerError';
+  }
+}
+
+export class OverpaymentError extends AppError {
+  constructor(applied: string, pending: string) {
+    super(
+      400,
+      `El importe a aplicar ($${applied} USD) excede el saldo pendiente ($${pending} USD).`
+    );
+    this.name = 'OverpaymentError';
+  }
+}
+
+export class InvalidPaymentError extends AppError {
+  constructor(message: string) {
+    super(400, message);
+    this.name = 'InvalidPaymentError';
+  }
+}
+
+export class CashShiftNotFoundError extends AppError {
+  constructor(
+    message = 'El turno de caja especificado no existe o no se encuentra abierto.'
+  ) {
+    super(403, message);
+    this.name = 'CashShiftNotFoundError';
+  }
+}
+
