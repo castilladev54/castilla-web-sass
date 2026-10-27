@@ -10,7 +10,12 @@ import { checkIdempotency, withIdempotency } from '../middlewares/idempotency.mi
 import { validate } from '../middleware/validate.js';
 import { createSaleSchema, saleIdSchema, updateSaleSchema } from '../validations/sale.validation.js';
 import { requireBranchHeader } from '../middleware/requireBranchHeader.js';
-import { ensureCashShiftOpen } from '../middleware/ensureCashShiftOpen.js';
+import {
+    ensureCashShiftOpen,
+    attachOpenCashShiftIfExists
+} from '../middleware/ensureCashShiftOpen.js';
+import { registerCustomerPayment } from '../controllers/customerPayment.controller.js';
+import { registerCustomerPaymentSchema } from '../validations/customerPayment.validation.js';
 
 const router = express.Router();
 
@@ -21,6 +26,15 @@ router.get('/', getSales);
 router.get('/:id', validate(saleIdSchema), getSaleById);
 router.patch('/:id', validate(updateSaleSchema), updateSale);
 router.put('/:id/cancel', validate(saleIdSchema), cancelSale);
+// Abonos
+router.post(
+    '/:id/payments',
+    requireBranchHeader,
+    checkIdempotency,
+    attachOpenCashShiftIfExists,
+    validate(registerCustomerPaymentSchema),
+    withIdempotency(registerCustomerPayment),
+);
 
 export default router;
 

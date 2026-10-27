@@ -13,6 +13,22 @@ import {
   InvalidPaymentError,
   CashShiftNotFoundError,
 } from '../lib/error.js';
+import { ExchangeRate } from '../models/ExchangeRate.js';
+
+const VE_OFFSET_MS = 4 * 60 * 60 * 1000;
+
+function getStartOfDayVE(dateInput: Date = new Date()): Date {
+  const nowVE = new Date(dateInput.getTime() - VE_OFFSET_MS);
+
+  return new Date(
+    Date.UTC(
+      nowVE.getUTCFullYear(),
+      nowVE.getUTCMonth(),
+      nowVE.getUTCDate(),
+      0, 0, 0, 0,
+    ) + VE_OFFSET_MS,
+  );
+}
 
 export {
   SaleNotFoundError,
@@ -50,7 +66,7 @@ export interface RegisterCustomerPaymentInput {
   saleId: string;
   businessOwnerId: string;
   actorId: string;
-  shiftId: string;
+  shiftId?: string;
   amountReceived: string;
   currency: 'USD' | 'VES';
   paymentMethod: CustomerPaymentMethod;
@@ -130,7 +146,7 @@ const validatePaymentInput = (input: RegisterCustomerPaymentInput) => {
     throw new InvalidPaymentError('El ID del operador es inválido.');
   }
 
-  if (!shiftId || !mongoose.Types.ObjectId.isValid(shiftId)) {
+  if (shiftId && !mongoose.Types.ObjectId.isValid(shiftId)) {
     throw new InvalidPaymentError('El ID del turno de caja es inválido.');
   }
 
@@ -160,9 +176,9 @@ const validatePaymentInput = (input: RegisterCustomerPaymentInput) => {
   let amountAppliedUSDStr: string;
 
   if (currency === 'VES') {
-    if (exchangeRateType !== 'BCV' && exchangeRateType !== 'COMERCIAL') {
+    if (exchangeRateType !== 'COMERCIAL') {
       throw new InvalidPaymentError(
-        'Los pagos en VES requieren un tipo de tasa BCV o COMERCIAL.'
+        'Los pagos en VES requieren la tasa comercial manual vigente del día.'
       );
     }
 
@@ -233,11 +249,14 @@ const validatePaymentInput = (input: RegisterCustomerPaymentInput) => {
 export const registerCustomerPayment = async (
   input: RegisterCustomerPaymentInput
 ): Promise<RegisterCustomerPaymentResult> => {
-  const {
+  let {
     amountReceivedStr,
     amountAppliedUSDStr,
     exchangeRateStr,
   } = validatePaymentInput(input);
+
+  let appliedAmountUSDStr = amountAppliedUSDStr;
+  let rateForPersistence = exchangeRateStr;
 
   const {
     saleId,
@@ -253,14 +272,7 @@ export const registerCustomerPayment = async (
 
   return withTransactionRetry(async (session) => {
     // 1. Validar que el turno de caja esté abierto
-    const shift = await CashShift.findOne({
-      _id: shiftId,
-      status: 'OPEN',
-    }).session(session);
-
-    if (!shift) {
-      throw new CashShiftNotFoundError();
-    }
+    // shift validation moved below idempotency check
 
     // 2. Control de Idempotencia a nivel de base de datos
     const existingPayment = await CustomerPayment.findOne({
@@ -337,7 +349,65 @@ export const registerCustomerPayment = async (
         isDuplicate: true,
       };
     }
+    // 2. Solo para abonos nuevos, exigir turno abierto
+    if (!shiftId) {
+      throw new CashShiftNotFoundError();
+    }
 
+    const shift = await CashShift.findOne({
+      _id: shiftId,
+      status: 'OPEN',
+    }).session(session);
+    if (!shift) {
+      throw new CashShiftNotFoundError();
+    }
+
+    if (currency === 'VES') {
+      const todayStart = getStartOfDayVE();
+
+      const currentRateDoc = await ExchangeRate.findOne({
+        customer_id: businessOwnerId,
+        date: todayStart,
+        is_manual_override: true,
+      }).session(session);
+
+      if (!currentRateDoc) {
+        throw new AppError(
+          409,
+          'No existe una tasa comercial manual registrada para hoy. No se puede registrar el abono en bolívares.',
+        );
+      }
+
+      const currentRate = toBigDecimal(
+        currentRateDoc.rate,
+        'currentRateDoc.rate',
+      );
+
+      const incomingRate = toBigDecimal(
+        exchangeRateStr,
+        'exchangeRate',
+      );
+
+      if (incomingRate.minus(currentRate).abs().gt(Big('0.001'))) {
+        throw new AppError(
+          409,
+          'La tasa comercial cambió. Actualiza la tasa en caja antes de registrar el abono.',
+        );
+      }
+
+      // La tasa de MongoDB es la fuente de verdad.
+      rateForPersistence = currentRate.toString();
+
+      appliedAmountUSDStr = roundToTwoDecimals(
+        Big(amountReceivedStr).div(currentRate),
+      );
+
+      if (Big(appliedAmountUSDStr).lte(0)) {
+        throw new InvalidPaymentError(
+          'El importe aplicado a la deuda en USD tras redondeo debe ser mayor a cero.',
+        );
+      }
+    }
     // 3. Buscar la venta dentro del negocio correspondiente
     const sale = await Sale.findOne({
       _id: saleId,
@@ -397,7 +467,7 @@ export const registerCustomerPayment = async (
     }
 
     // 8. Validar sobrepago antes de registrar
-    const appliedUSD = Big(amountAppliedUSDStr);
+    const appliedUSD = Big(appliedAmountUSDStr);
 
     if (appliedUSD.gt(pendingBalance)) {
       throw new OverpaymentError(
@@ -417,8 +487,8 @@ export const registerCustomerPayment = async (
           received_by: actorId,
           amount_received: amountReceivedStr,
           currency,
-          amount_applied_usd: amountAppliedUSDStr,
-          exchange_rate: currency === 'VES' ? exchangeRateStr : undefined,
+          amount_applied_usd: appliedAmountUSDStr,
+          exchange_rate: currency === 'VES' ? rateForPersistence : undefined,
           exchange_rate_type: exchangeRateType,
           payment_method: paymentMethod,
           idempotency_key: idempotencyKey,

@@ -58,3 +58,40 @@ export const ensureCashShiftOpen = async (
     next(error);
   }
 };
+
+/**
+ * Busca el turno abierto sin bloquear la petición si no existe.
+ *
+ * Se utiliza en operaciones idempotentes que deben poder recuperar
+ * un pago previamente registrado aunque el turno ya esté cerrado.
+ * El servicio decide si se trata de un pago existente o uno nuevo.
+ */
+export const attachOpenCashShiftIfExists = async (
+  req: Request,
+  _res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.actorId ?? req.userId;
+    const branchId = req.branchId;
+
+    if (!userId || !branchId) {
+      next();
+      return;
+    }
+
+    const activeShift = await CashShift.findOne({
+      branch_id: new Types.ObjectId(String(branchId)),
+      cashier_id: new Types.ObjectId(String(userId)),
+      status: 'OPEN',
+    });
+
+    if (activeShift) {
+      req.cashShift = activeShift;
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+};

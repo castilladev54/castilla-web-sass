@@ -13,6 +13,7 @@ import { Product } from '../models/Product.js';
 import { Inventory } from '../models/Inventory.js';
 import { StockMovement, StockMovementType } from '../models/StockMovement.js';
 import { Category } from '../models/Category.js';
+import { ExchangeRate } from '../models/ExchangeRate.js';
 
 import {
   registerCustomerPayment,
@@ -72,6 +73,7 @@ afterEach(async () => {
   await StockMovement.deleteMany({});
   await Category.deleteMany({});
   vi.clearAllMocks();
+await ExchangeRate.deleteMany({});
 });
 
 // ─── HELPERS PARA GENERACIÓN DE CONTEXTO DE PRUEBA ──────────────────────────
@@ -122,7 +124,32 @@ const createTestContext = async () => {
     customerId: customer._id.toString(),
   };
 };
+const createCommercialRate = async (
+  businessOwnerId: string,
+  rate: string,
+) => {
+  const VE_OFFSET_MS = 4 * 60 * 60 * 1000;
+  const nowVE = new Date(Date.now() - VE_OFFSET_MS);
 
+  const date = new Date(
+    Date.UTC(
+      nowVE.getUTCFullYear(),
+      nowVE.getUTCMonth(),
+      nowVE.getUTCDate(),
+      0,
+      0,
+      0,
+      0,
+    ) + VE_OFFSET_MS,
+  );
+
+  return ExchangeRate.create({
+    customer_id: new mongoose.Types.ObjectId(businessOwnerId),
+    rate,
+    date,
+    is_manual_override: true,
+  });
+};
 const createSale = async (
   ctx: {
     businessOwnerId: string;
@@ -429,7 +456,8 @@ describe('CustomerPayment Service — Pruebas del Servicio', () => {
   // ─── 7. Pago en VES ───────────────────────────────────────────────────────
   it('Pago en VES: Se calcula correctamente el importe aplicado en USD con tasa COMERCIAL', async () => {
     const ctx = await createTestContext();
-    const sale = await createSale(ctx, { total_amount: '100.00' });
+    await createCommercialRate(ctx.businessOwnerId, '50.00');
+  const sale = await createSale(ctx, { total_amount: '100.00' });
 
     // 1000.00 VES / 50.00 (tasa) = 20.00 USD aplicados
     const result = await registerCustomerPayment({
@@ -458,7 +486,8 @@ describe('CustomerPayment Service — Pruebas del Servicio', () => {
 
   it('Pago en VES con redondeo financiero: aplica regla ROUND_HALF_UP a dos decimales', async () => {
     const ctx = await createTestContext();
-    const sale = await createSale(ctx, { total_amount: '100.00' });
+    await createCommercialRate(ctx.businessOwnerId, '51.25');
+const sale = await createSale(ctx, { total_amount: '100.00' });
 
     // 100.00 VES / 51.25 = 1.95121951219512195122 -> redondeo half-up = 1.95 USD
     const result = await registerCustomerPayment({
@@ -469,7 +498,7 @@ describe('CustomerPayment Service — Pruebas del Servicio', () => {
       amountReceived: '100.00',
       currency: 'VES',
       exchangeRate: '51.25',
-      exchangeRateType: 'BCV',
+      exchangeRateType: 'COMERCIAL',
       paymentMethod: 'Transferencia',
       idempotencyKey: `idem-ves-round-${Date.now()}`,
     });
@@ -779,6 +808,70 @@ describe('CustomerPayment Service — Pruebas del Servicio', () => {
     // Comprobar que el inventario no se modificó
     expect(stockAfter!.quantity.toString()).toBe(stockBefore!.quantity.toString());
     expect(movementsCountAfter).toBe(movementsCountBefore);
+  });
+
+  it('Reintento sin turno: devuelve el abono original y conserva su turno', async () => {
+    const ctx = await createTestContext();
+    const sale = await createSale(ctx, { total_amount: '100.00' });
+    const idempotencyKey = `retry-closed-shift-${Date.now()}`;
+
+    const paymentInput = {
+      saleId: sale._id.toString(),
+      businessOwnerId: ctx.businessOwnerId,
+      actorId: ctx.actorId,
+      shiftId: ctx.shiftId,
+      amountReceived: '30.00',
+      currency: 'USD' as const,
+      paymentMethod: 'Efectivo' as const,
+      exchangeRateType: 'NO_APLICA' as const,
+      idempotencyKey,
+    };
+
+    const original = await registerCustomerPayment(paymentInput);
+
+    await CashShift.updateOne(
+      { _id: ctx.shiftId },
+      { $set: { status: 'CLOSED' } },
+    );
+
+    const retry = await registerCustomerPayment({
+      ...paymentInput,
+      shiftId: undefined,
+    });
+
+    expect(retry.isDuplicate).toBe(true);
+    expect(retry.payment._id.toString()).toBe(original.payment._id.toString());
+    expect(retry.payment.shift_id.toString()).toBe(ctx.shiftId);
+
+    expect(
+      await CustomerPayment.countDocuments({
+        business_owner_id: ctx.businessOwnerId,
+        idempotency_key: idempotencyKey,
+      }),
+    ).toBe(1);
+  });
+
+  it('Abono nuevo sin turno: se rechaza y no crea ningún pago', async () => {
+    const ctx = await createTestContext();
+    const sale = await createSale(ctx, { total_amount: '100.00' });
+
+    await expect(
+      registerCustomerPayment({
+        saleId: sale._id.toString(),
+        businessOwnerId: ctx.businessOwnerId,
+        actorId: ctx.actorId,
+        shiftId: undefined,
+        amountReceived: '30.00',
+        currency: 'USD',
+        paymentMethod: 'Efectivo',
+        exchangeRateType: 'NO_APLICA',
+        idempotencyKey: `new-payment-no-shift-${Date.now()}`,
+      }),
+    ).rejects.toThrow();
+
+    expect(
+      await CustomerPayment.countDocuments({ sale_id: sale._id }),
+    ).toBe(0);
   });
 });
 
