@@ -117,14 +117,16 @@ export interface PurchaseDetailItem {
   product_id: ProductId | { _id: ProductId; name: string };
   quantity: string;
   unit_cost: string;
+  invoice_number?: string;
   createdAt?: string;
 }
 
 export interface Purchase {
   _id: PurchaseId;
   admin_id: UserId | { _id: UserId; name: string; email: string };
-  branch_id: BranchId;
+  branch_id?: BranchId | null;
   supplier: string;
+  invoice_number?: string;
   total_cost: string;
   paid_amount: string;
   status: PurchaseDbStatus;

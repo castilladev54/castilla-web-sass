@@ -31,15 +31,17 @@ export const purchaseKeys = {
 
 export interface PurchaseItemPayload {
   product_id: string;
-  quantity: number;
-  unit_cost: number;
+  quantity: string | number;
+  unit_cost: string | number;
+  invoice_number?: string | null;
 }
 
 export interface CreatePurchasePayload {
   supplier: string;
   dueDate?: string | null;
   items: PurchaseItemPayload[];
-  exchange_rate?: number;
+  exchange_rate?: string | number;
+  invoice_number?: string | null;
 }
 
 export interface AddPaymentPayload {

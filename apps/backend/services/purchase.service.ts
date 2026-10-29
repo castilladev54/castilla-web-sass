@@ -19,7 +19,7 @@ export interface PurchaseFilters {
 
 export interface CreatePurchaseParams {
   ownerId: BusinessOwnerId;
-  branchId: BranchId;
+  branchId?: BranchId | null;
   payload: CreatePurchaseDTO;
 }
 
@@ -42,14 +42,24 @@ export class PurchaseService {
     }
 
     try {
-      const branch = await Branch.findOne({
-        _id: branchId,
-        owner_id: ownerId,
-        is_active: true
-      }).session(session);
-
-      if (!branch) {
-        throw new Error('La sucursal destino no existe o se encuentra inactiva.');
+      let resolvedBranchId: BranchId | null = null;
+      if (branchId) {
+        const branch = await Branch.findOne({
+          _id: branchId,
+          owner_id: ownerId,
+          is_active: true
+        }).session(session);
+        if (branch) {
+          resolvedBranchId = branch._id;
+        }
+      } else {
+        const defaultBranch = await Branch.findOne({
+          owner_id: ownerId,
+          is_active: true
+        }).session(session);
+        if (defaultBranch) {
+          resolvedBranchId = defaultBranch._id;
+        }
       }
 
       let total_cost = '0';
@@ -74,8 +84,9 @@ export class PurchaseService {
 
       const purchase = new Purchase({
         admin_id: ownerId,
-        branch_id: branchId,
+        branch_id: resolvedBranchId,
         supplier,
+        invoice_number: payload.invoice_number || null,
         total_cost,
         due_date: dueDate ? new Date(dueDate) : defaultDueDate,
         exchange_rate
@@ -83,34 +94,37 @@ export class PurchaseService {
       await purchase.save({ session });
 
       for (const item of items) {
-        const preInv = await Inventory.findOne({ branch_id: branchId, product_id: item.product_id, owner_id: ownerId }).session(session);
-        const prevQty = preInv?.quantity ?? mongoose.Types.Decimal128.fromString('0');
-        const quantityDecimal = asDecimal128(item.quantity);
+        if (resolvedBranchId) {
+          const preInv = await Inventory.findOne({ branch_id: resolvedBranchId, product_id: item.product_id, owner_id: ownerId }).session(session);
+          const prevQty = preInv?.quantity ?? mongoose.Types.Decimal128.fromString('0');
+          const quantityDecimal = asDecimal128(item.quantity);
 
-        const invResult = await Inventory.findOneAndUpdate(
-          { branch_id: branchId, product_id: item.product_id, owner_id: ownerId },
-          { $inc: { quantity: quantityDecimal } },
-          { upsert: true, session, new: true }
-        );
-        if (!invResult) throw new Error('Error al actualizar inventario en la compra');
+          const invResult = await Inventory.findOneAndUpdate(
+            { branch_id: resolvedBranchId, product_id: item.product_id, owner_id: ownerId },
+            { $inc: { quantity: quantityDecimal } },
+            { upsert: true, session, new: true }
+          );
+          if (!invResult) throw new Error('Error al actualizar inventario en la compra');
 
-        await StockMovement.create([{
-          inventory_id: invResult._id,
-          product_id: item.product_id,
-          branch_id: branchId,
-          owner_id: ownerId,
-          type: StockMovementType.PURCHASE,
-          quantity_change: quantityDecimal,
-          previous_quantity: prevQty,
-          new_quantity: invResult.quantity,
-          created_by: ownerId
-        }], { session });
+          await StockMovement.create([{
+            inventory_id: invResult._id,
+            product_id: item.product_id,
+            branch_id: resolvedBranchId,
+            owner_id: ownerId,
+            type: StockMovementType.PURCHASE,
+            quantity_change: quantityDecimal,
+            previous_quantity: prevQty,
+            new_quantity: invResult.quantity,
+            created_by: ownerId
+          }], { session });
+        }
 
         const detail = new PurchaseDetail({
           purchase_id: purchase._id,
           product_id: item.product_id,
           quantity: item.quantity,
-          unit_cost: item.unit_cost
+          unit_cost: item.unit_cost,
+          invoice_number: item.invoice_number || null,
         });
         await detail.save({ session });
       }
@@ -120,7 +134,9 @@ export class PurchaseService {
         session.endSession();
       }
 
-      await bumpBranchCacheVersion('products', String(ownerId), String(branchId));
+      if (resolvedBranchId) {
+        await bumpBranchCacheVersion('products', String(ownerId), String(resolvedBranchId));
+      }
 
       return purchase;
     } catch (error) {

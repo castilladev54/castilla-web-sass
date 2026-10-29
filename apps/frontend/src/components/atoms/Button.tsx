@@ -36,8 +36,10 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(({
   ...props
 }, ref) => {
   const isIconVariant = variant === 'icon';
+  const hasCustomBg = /\b(bg-[a-z0-9-]+|from-[a-z0-9-]+)\b/.test(className);
+  const variantClass = hasCustomBg && variant === 'primary' ? 'text-white' : variantClasses[variant];
   const base = 'inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-orange-500/40';
-  const classes = [base, variantClasses[variant], !isIconVariant ? sizeClasses[size] : '', className].filter(Boolean).join(' ');
+  const classes = [base, variantClass, !isIconVariant ? sizeClasses[size] : '', className].filter(Boolean).join(' ');
 
   return (
     <button ref={ref} className={classes} disabled={disabled || isLoading} {...props}>

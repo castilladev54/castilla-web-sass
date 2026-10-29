@@ -354,10 +354,20 @@ export const registerCustomerPayment = async (
       throw new CashShiftNotFoundError();
     }
 
-    const shift = await CashShift.findOne({
-      _id: shiftId,
-      status: 'OPEN',
-    }).session(session);
+    const shift = await CashShift.findOneAndUpdate(
+      {
+        _id: shiftId,
+        status: 'OPEN',
+      },
+      {
+        $inc: { __v: 1 },
+      },
+      {
+        session,
+        returnDocument: 'after',
+      },
+    );
+
     if (!shift) {
       throw new CashShiftNotFoundError();
     }

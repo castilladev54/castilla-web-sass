@@ -10,11 +10,17 @@ const purchaseSchema = new mongoose.Schema({
   branch_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Branch',
-    required: true
+    required: false,
+    default: null
   },
   supplier: {
     type: String,
     required: true
+  },
+  invoice_number: {
+    type: String,
+    trim: true,
+    default: null
   },
   total_cost: DecimalConfig,
   exchange_rate: DecimalOptionalConfig,

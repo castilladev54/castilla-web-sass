@@ -16,7 +16,12 @@ const purchaseDetailSchema = new mongoose.Schema({
     required: true
   },
   quantity: DecimalConfig,
-  unit_cost: DecimalConfig
+  unit_cost: DecimalConfig,
+  invoice_number: {
+    type: String,
+    trim: true,
+    default: null
+  }
 }, { 
   timestamps: true,
   toJSON: { getters: true },

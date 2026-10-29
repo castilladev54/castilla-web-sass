@@ -10,14 +10,10 @@ export class PurchaseController {
 
   public createPurchase = async (req: Request, res: Response): Promise<void> => {
     try {
-      // 1. Tipado extraído desde el middleware (garantizado por requireBranchHeader)
-      const branchId = req.branchId as BranchId;
+      // 1. Contexto de sucursal opcional
+      const rawBranch = req.branchId || req.headers['x-branch-id'];
+      const branchId = rawBranch ? (rawBranch as unknown as BranchId) : undefined;
       const ownerId = req.businessOwnerId as BusinessOwnerId;
-
-      if (!branchId) {
-        res.status(400).json({ success: false, message: 'branch_id es requerido para registrar una compra.' });
-        return;
-      }
 
       // 2. Validación estricta del body
       const payload = createPurchaseBodySchema.parse(req.body);

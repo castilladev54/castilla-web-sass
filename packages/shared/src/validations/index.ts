@@ -183,18 +183,25 @@ export type UpdateSaleDTO = z.infer<typeof updateSaleBodySchema>;
 
 // ─── COMPRAS ────────────────────────────────────────────────────────────────
 
+const flexibleNumericString = z.union([
+  numericString,
+  z.number().transform((val) => String(val)),
+]);
+
 export const purchaseItemSchema = z.object({
   product_id: zNominalId<'ProductId'>(),
-  quantity: numericString,
-  unit_cost: numericString,
+  quantity: flexibleNumericString,
+  unit_cost: flexibleNumericString,
+  invoice_number: z.string().trim().optional().nullable(),
 });
 export type PurchaseItemDTO = z.infer<typeof purchaseItemSchema>;
 
 export const createPurchaseBodySchema = z.object({
   supplier: z.string().min(1, 'Supplier is required'),
   items: z.array(purchaseItemSchema).min(1, 'At least one product item is required'),
-  dueDate: z.string().datetime({ offset: true }).optional(),
-  exchange_rate: numericString.optional(),
+  dueDate: z.string().datetime({ offset: true }).optional().nullable(),
+  exchange_rate: flexibleNumericString.optional().nullable(),
+  invoice_number: z.string().trim().optional().nullable(),
 });
 export type CreatePurchaseDTO = z.infer<typeof createPurchaseBodySchema>;
 

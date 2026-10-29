@@ -57,9 +57,10 @@ interface FormItem {
   quantity: number | string;
   unit_cost: number | string;
   unit_type: UnitType;
+  invoice_number?: string;
 }
 
-const EMPTY_ITEM: FormItem = { product_id: '', quantity: 1, unit_cost: 0, unit_type: 'unidad' };
+const EMPTY_ITEM: FormItem = { product_id: '', quantity: 1, unit_cost: 0, unit_type: 'unidad', invoice_number: '' };
 const createEmptyItems = (): FormItem[] => [{ ...EMPTY_ITEM }];
 
 /* ─── Helpers ────────────────────────────────────────────── */
@@ -97,7 +98,7 @@ const getStatusInfo = (purchase: Purchase): StatusInfo => {
 };
 
 const inputClasses =
-  'w-full bg-black/50 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all duration-200';
+  'w-full bg-[#12121a] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all duration-200';
 
 /* ─── Subcomponente: badge de estado ─────────────────────── */
 interface StatusBadgeProps {
@@ -195,66 +196,108 @@ const PurchaseItemRow = ({ item, index, products, onChange, onRemove, showRemove
     initial={{ opacity: 0, y: 10 }}
     animate={{ opacity: 1, y: 0 }}
     exit={{ opacity: 0, x: -30 }}
-    className="relative flex flex-wrap items-end gap-3 p-4 bg-white/5 rounded-xl border border-white/5 backdrop-blur-sm"
+    className="relative grid grid-cols-1 sm:grid-cols-12 gap-3 items-end p-4 bg-white/5 rounded-xl border border-white/5 backdrop-blur-sm hover:border-white/10 transition-colors"
   >
     {/* Producto */}
-    <div className="flex-[2] min-w-[180px]">
-      <label className="block text-xs font-medium text-gray-400 mb-1.5 ml-1">Producto</label>
+    <div className={showRemove ? 'sm:col-span-3' : 'sm:col-span-4'}>
+      <label htmlFor={`item-product-${index}`} className="block text-xs font-medium text-gray-300 mb-1.5 ml-1">
+        Producto
+      </label>
       <select
+        id={`item-product-${index}`}
         value={item.product_id}
         onChange={(e) => onChange(index, 'product_id', e.target.value)}
-        className={`${inputClasses} appearance-none`}
+        className={`${inputClasses} appearance-none cursor-pointer`}
         required
       >
-        <option value="">Seleccionar…</option>
+        <option value="" className="bg-[#1a1a24] text-gray-400">Seleccionar…</option>
         {products.map((p) => (
-          <option key={p._id} value={p._id}>
+          <option key={p._id} value={p._id} className="bg-[#1a1a24] text-white">
             {p.name}
           </option>
         ))}
       </select>
     </div>
 
-    {/* Cantidad */}
-    <div className="flex-1 lg:w-28">
-      <label className="block text-xs font-medium text-gray-400 mb-1.5 ml-1">Cant.</label>
+    {/* N° Factura */}
+    <div className="sm:col-span-2">
+      <label htmlFor={`item-invoice-${index}`} className="block text-xs font-medium text-gray-300 mb-1.5 ml-1">
+        N° Factura
+      </label>
       <input
-        type="number" min="0.01" step="0.01" required
+        id={`item-invoice-${index}`}
+        type="text"
+        value={item.invoice_number || ''}
+        onChange={(e) => onChange(index, 'invoice_number', e.target.value)}
+        className={inputClasses}
+        placeholder="Ej. F-001"
+        autoComplete="off"
+      />
+    </div>
+
+    {/* Cantidad */}
+    <div className="sm:col-span-2">
+      <label htmlFor={`item-qty-${index}`} className="block text-xs font-medium text-gray-300 mb-1.5 ml-1">
+        Cant.
+      </label>
+      <input
+        id={`item-qty-${index}`}
+        type="number"
+        min="0.01"
+        step="0.01"
+        required
         value={item.quantity}
         onChange={(e) => onChange(index, 'quantity', e.target.value)}
-        className={inputClasses}
-        placeholder="0.00"
+        className={`${inputClasses} text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
+        placeholder="1"
+        autoComplete="off"
       />
     </div>
 
     {/* Costo unitario */}
-    <div className="flex-1 lg:w-32">
-      <label className="block text-xs font-medium text-gray-400 mb-1.5 ml-1">Costo Unit.</label>
-      <input
-        type="number" min="0" step="0.01" required
-        value={item.unit_cost}
-        onChange={(e) => onChange(index, 'unit_cost', e.target.value)}
-        className={inputClasses}
-        placeholder="$0.00"
-      />
+    <div className="sm:col-span-2">
+      <label htmlFor={`item-cost-${index}`} className="block text-xs font-medium text-gray-300 mb-1.5 ml-1">
+        Costo Unit.
+      </label>
+      <div className="relative">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs pointer-events-none">$</span>
+        <input
+          id={`item-cost-${index}`}
+          type="number"
+          min="0"
+          step="0.01"
+          required
+          value={item.unit_cost}
+          onChange={(e) => onChange(index, 'unit_cost', e.target.value)}
+          className={`${inputClasses} pl-7 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
+          placeholder="0.00"
+          autoComplete="off"
+        />
+      </div>
     </div>
 
     {/* Subtotal */}
-    <div className="flex-1 lg:w-32">
-      <label className="block text-xs font-medium text-gray-400 mb-1.5 ml-1">Subtotal</label>
-      <div className="flex items-center h-[42px] px-4 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-indigo-300 font-medium whitespace-nowrap">
+    <div className="sm:col-span-2">
+      <label className="block text-xs font-medium text-gray-300 mb-1.5 ml-1">Subtotal</label>
+      <div className="flex items-center justify-center h-[42px] px-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-indigo-300 font-semibold text-sm whitespace-nowrap">
         {fmtUSD(MoneyMath.mul(String(item.quantity || 0), String(item.unit_cost || 0)))}
       </div>
     </div>
 
+    {/* Botón eliminar */}
     {showRemove && (
-      <Button
-        variant="icon" type="button"
-        onClick={() => onRemove(index)}
-        className="text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 absolute -top-2 -right-2 right bg-black lg:relative lg:top-0 lg:right-0 lg:mb-1 h-10 w-10 flex items-center justify-center rounded-full transition-colors"
-      >
-        <Trash2 size={18} />
-      </Button>
+      <div className="sm:col-span-1 flex justify-center pb-0.5">
+        <Button
+          variant="icon"
+          type="button"
+          onClick={() => onRemove(index)}
+          className="text-gray-400 hover:text-rose-400 hover:bg-rose-500/10 h-[42px] w-[42px] flex items-center justify-center rounded-xl transition-colors border border-white/5"
+          title="Eliminar fila"
+          aria-label="Eliminar fila"
+        >
+          <Trash2 size={18} />
+        </Button>
+      </div>
     )}
   </motion.div>
 );
@@ -342,6 +385,7 @@ const PurchaseDetailView = ({ purchase, onBack, onPay }: PurchaseDetailViewProps
                 <thead>
                   <tr className="bg-black/40 text-gray-400 text-xs uppercase tracking-wider">
                     <th className="px-6 py-4 font-semibold">Producto</th>
+                    <th className="px-6 py-4 font-semibold">N° Factura</th>
                     <th className="px-6 py-4 font-semibold">Cantidad</th>
                     <th className="px-6 py-4 font-semibold">Costo Unit.</th>
                     <th className="px-6 py-4 font-semibold text-right">Subtotal</th>
@@ -365,6 +409,15 @@ const PurchaseDetailView = ({ purchase, onBack, onPay }: PurchaseDetailViewProps
                             {productName}
                           </span>
                           <div className="text-xs text-gray-500 mt-1 font-mono">{productIdStr}</div>
+                        </td>
+                        <td className="px-6 py-4 text-gray-300">
+                          {item.invoice_number ? (
+                            <span className="font-mono text-xs bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 px-2.5 py-1 rounded-md">
+                              {item.invoice_number}
+                            </span>
+                          ) : (
+                            <span className="text-gray-600 text-xs">—</span>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-gray-300">
                           <span className="bg-white/10 px-2 py-1 rounded-md text-sm font-medium">{item.quantity}</span>
@@ -593,13 +646,14 @@ const PurchaseManagerInner = () => {
     }
     try {
       await createMutation.mutateAsync({
-        supplier,
-        dueDate: dueDate ? new Date(dueDate).toISOString() : null,
-        exchange_rate: exchangeRate ? parseFloat(exchangeRate) : undefined,
-        items: items.map(({ product_id, quantity, unit_cost }) => ({
+        supplier: supplier.trim(),
+        dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
+        exchange_rate: exchangeRate ? String(exchangeRate) : undefined,
+        items: items.map(({ product_id, quantity, unit_cost, invoice_number }) => ({
           product_id,
-          quantity: parseFloat(String(quantity)) || 0,
-          unit_cost: Number(unit_cost),
+          quantity: String(quantity),
+          unit_cost: String(unit_cost),
+          invoice_number: invoice_number?.trim() || undefined,
         })),
       });
       toast.success('Compra/Entrada registrada con éxito');
@@ -831,7 +885,7 @@ const PurchaseManagerInner = () => {
             <Button variant="secondary" type="button" onClick={closeForm} className="px-6 rounded-xl hover:bg-white/5 border-transparent">
               Cancelar
             </Button>
-            <Button variant="primary" type="submit" isLoading={createMutation.isPending} disabled={!hasValidRate} className="px-8 rounded-xl bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-500/20 border-0 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-indigo-600">
+            <Button variant="primary" type="submit" isLoading={createMutation.isPending} disabled={!hasValidRate} className="px-8 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold shadow-lg shadow-indigo-600/25 border-0 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
               <Check size={18} /> Confirmar Ingreso
             </Button>
           </div>
