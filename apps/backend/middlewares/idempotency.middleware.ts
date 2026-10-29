@@ -22,8 +22,17 @@ export const checkIdempotency = async (req: Request | any, res: Response, next: 
       return res.status(400).json({ success: false, essage: parsed.error.issues[0]?.message ?? 'Cabecera x-idempotency-key inválida' });
     }
 
-    const userId = req.user ? req.user._id.toString() : 'anonymous';
-    const redisKey = `idempotency:${userId}:${key}`;
+    const actorId = req.actorId?.toString() ?? req.userId?.toString();
+    const businessOwnerId = req.businessOwnerId?.toString();
+
+    if (!actorId || !businessOwnerId) {
+      return res.status(401).json({
+        success: false,
+        message: 'No se pudo identificar al usuario y su negocio para procesar la solicitud.',
+      });
+    }
+
+    const redisKey = `idempotency:${businessOwnerId}:${actorId}:${key}`;
 
     // SET NX: Guardamos el estado explícito PROCESSING
     const processingState = JSON.stringify({ state: "PROCESSING" });

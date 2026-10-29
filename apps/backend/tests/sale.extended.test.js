@@ -9,7 +9,7 @@ import { Product } from '../models/Product.js';
 import { Sale } from '../models/Sale.js';
 import { SaleDetail } from '../models/SaleDetail.js';
 import { Branch } from '../models/Branch.js';
-import { CashShift } from '../models/CashShift.js';
+import { CashShift } from '../models/CashShift.model.ts';
 import { Inventory } from '../models/Inventory.js';
 import bcryptjs from 'bcryptjs';
 import { getAuthHeadersForUser } from './helpers/auth.js';
@@ -27,10 +27,10 @@ vi.mock('../lib/redis.js', () => ({
     del: vi.fn(async () => 1),
     incr: vi.fn(async () => 1),
   },
-  getOrSetCache:    vi.fn(async (_key, fn) => ({ data: await fn(), fromCache: false })),
-  invalidateCache:  vi.fn(async () => {}),
-  bumpCacheVersion: vi.fn(async () => {}),
-  getCacheVersion:  vi.fn(async () => 0),
+  getOrSetCache: vi.fn(async (_key, fn) => ({ data: await fn(), fromCache: false })),
+  invalidateCache: vi.fn(async () => { }),
+  bumpCacheVersion: vi.fn(async () => { }),
+  getCacheVersion: vi.fn(async () => 0),
   buildPaginatedKey: vi.fn((_p, _v, _pg, _l, uid) => `mock:${uid}`),
 }));
 
@@ -52,7 +52,7 @@ afterAll(async () => {
 afterEach(async () => {
   await Sale.deleteMany({});
   await SaleDetail.deleteMany({});
-  await mongoose.connection.collection('products').drop().catch(() => {});
+  await mongoose.connection.collection('products').drop().catch(() => { });
   await Inventory.deleteMany({});
   vi.clearAllMocks();
 });
@@ -111,7 +111,8 @@ describe('Sale Controllers — Extended Tests (Cache + Edge Cases)', () => {
     productId = product._id.toString();
 
     // Inventory con stock = 20 (equivalente al stock inicial del test)
-    await Inventory.create({ owner_id: userId, 
+    await Inventory.create({
+      owner_id: userId,
       product_id: productId,
       branch_id: branchId,
       quantity: 20,
@@ -307,7 +308,7 @@ describe('Sale Controllers — Extended Tests (Cache + Edge Cases)', () => {
       await product2.save();
       const product2Id = product2._id.toString();
 
-      await Inventory.create({ owner_id: userId,  product_id: product2Id, branch_id: branchId, quantity: 10 });
+      await Inventory.create({ owner_id: userId, product_id: product2Id, branch_id: branchId, quantity: 10 });
 
       const response = await request(app)
         .post('/api/sales')
@@ -317,15 +318,15 @@ describe('Sale Controllers — Extended Tests (Cache + Edge Cases)', () => {
           payment_method: 'Efectivo',
           branch_id: branchId,
           items: [
-            { product_id: productId,  quantity: 3, unit_price: 15 }, // Agua: 45
-            { product_id: product2Id, quantity: 2, unit_price: 8  }, // Galletas: 16
+            { product_id: productId, quantity: 3, unit_price: 15 }, // Agua: 45
+            { product_id: product2Id, quantity: 2, unit_price: 8 }, // Galletas: 16
           ],
         });
 
       expect(response.status).toBe(201);
       expect(response.body.sale.total_amount).toBe('61'); // 45 + 16
 
-      const agua    = await Inventory.findOne({ product_id: productId,  branch_id: branchId });
+      const agua = await Inventory.findOne({ product_id: productId, branch_id: branchId });
       const galleta = await Inventory.findOne({ product_id: product2Id, branch_id: branchId });
       expect(agua.quantity).toBe(17);   // 20 - 3
       expect(galleta.quantity).toBe(8); // 10 - 2

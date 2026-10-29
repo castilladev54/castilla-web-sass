@@ -11,6 +11,7 @@ import { SaleDetail } from '../models/SaleDetail.js';
 import { Branch } from '../models/Branch.ts';
 import { Inventory } from '../models/Inventory.ts';
 import { CashShift } from '../models/CashShift.model.ts';
+import { Customer } from '../models/Customer.ts';
 import bcryptjs from 'bcryptjs';
 import crypto from 'crypto';
 import { getAuthHeadersForUser } from './helpers/auth.js';
@@ -41,9 +42,9 @@ vi.mock('../lib/redis.js', () => ({
     })),
   },
   getOrSetCache: vi.fn(async (_key, fn) => ({ data: await fn(), fromCache: false })),
-  invalidateCache: vi.fn(async () => {}),
-  bumpCacheVersion: vi.fn(async () => {}),
-  bumpBranchCacheVersion: vi.fn(async () => {}),
+  invalidateCache: vi.fn(async () => { }),
+  bumpCacheVersion: vi.fn(async () => { }),
+  bumpBranchCacheVersion: vi.fn(async () => { }),
   getCacheVersion: vi.fn(async () => 0),
   buildPaginatedKey: vi.fn((_p, _v, _pg, _l, uid) => `mock:${uid}`),
 }));
@@ -81,6 +82,7 @@ afterEach(async () => {
   await SaleDetail.deleteMany({});
   await Product.deleteMany({});
   await Inventory.deleteMany({});
+  await Customer.deleteMany({});
   vi.clearAllMocks();
 });
 
@@ -131,12 +133,12 @@ describe('CashShift & Sales Integration Test Suite', () => {
       user: userId,
     });
     await product.save();
-    await Inventory.create({ owner_id: userId, 
+    await Inventory.create({
+      owner_id: userId,
       product_id: product._id,
       branch_id: branchId,
-      stock,
-      min_quantity: 0,
-      owner_id: userId,
+      quantity: String(stock),
+      min_stock_alert: '0',
     });
     return product._id.toString();
   };
@@ -215,7 +217,7 @@ describe('CashShift & Sales Integration Test Suite', () => {
     // 2. Ejecutar venta intentando inyectar un shift_id arbitrario en el body
     const fakeShiftId = new mongoose.Types.ObjectId().toString();
     const salePayload = {
-      customer_id: userId,
+      customer_id: null,
       payment_method: 'Efectivo',
       shift_id: fakeShiftId, // El controlador debe ignorar esto
       items: [
@@ -262,27 +264,45 @@ describe('CashShift & Sales Integration Test Suite', () => {
 
     // 2. Venta 1: 2 * 100.25 = 200.50
     const product2 = await createProductWithStock('Producto A', 100.25, 100);
-    await request(app)
+    const sale1Res = await request(app)
       .post('/api/sales')
-      .set({ ...authHeaders, 'x-branch-id': branchId.toString(), 'x-shift-id': shiftId })
+      .set({
+        ...authHeaders,
+        'x-branch-id': branchId.toString(),
+        'x-shift-id': shiftId,
+      })
       .set('x-idempotency-key', crypto.randomUUID())
       .send({
-        customer_id: userId,
+        customer_id: null,
         payment_method: 'Efectivo',
-        items: [{ product_id: product2, quantity: '2', unit_price: '100.25' }],
+        items: [
+          { product_id: product2, quantity: '2', unit_price: '100.25' },
+        ],
       });
+
+    console.log('Venta 1:', sale1Res.status, sale1Res.body);
+    expect(sale1Res.status).toBe(201);
 
     // 3. Venta 2: 1 * 49.25 = 49.25
     const product3 = await createProductWithStock('Producto B', 49.25, 100);
-    await request(app)
+    const sale2Res = await request(app)
       .post('/api/sales')
-      .set({ ...authHeaders, 'x-branch-id': branchId.toString(), 'x-shift-id': shiftId })
+      .set({
+        ...authHeaders,
+        'x-branch-id': branchId.toString(),
+        'x-shift-id': shiftId,
+      })
       .set('x-idempotency-key', crypto.randomUUID())
       .send({
-        customer_id: userId,
+        customer_id: null,
         payment_method: 'Efectivo',
-        items: [{ product_id: product3, quantity: '1', unit_price: '49.25' }],
+        items: [
+          { product_id: product3, quantity: '1', unit_price: '49.25' },
+        ],
       });
+
+    console.log('Venta 2:', sale2Res.status, sale2Res.body);
+    expect(sale2Res.status).toBe(201);
 
     // 4. Cerrar turno.
     // Total ventas = 200.50 + 49.25 = 249.75
@@ -303,7 +323,7 @@ describe('CashShift & Sales Integration Test Suite', () => {
       .set({ ...authHeaders, 'x-branch-id': branchId.toString(), 'x-shift-id': shiftId })
       .set('x-idempotency-key', crypto.randomUUID())
       .send({
-        customer_id: userId,
+        customer_id: null,
         payment_method: 'Efectivo',
         items: [{ product_id: productId, quantity: '1', unit_price: '10.00' }],
       });

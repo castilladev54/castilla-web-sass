@@ -3,6 +3,7 @@ import { Types } from 'mongoose';
 import Big from 'big.js';
 import { CashShift } from '../models/CashShift.model.js';
 import { Sale } from '../models/Sale.js';
+import { CustomerPayment } from '../models/CustomerPayment.js';
 import { BranchId } from '../types/brands.js';
 
 // ─── Abrir Turno de Caja ─────────────────────────────────────────────────────
@@ -106,13 +107,14 @@ export const closeShift = async (
       return;
     }
 
-    // Agregación de ventas completadas asociadas exclusivamente a este shift_id.
-    // Usa el campo `total_amount` del modelo Sale existente (no `total`).
+    // 1. Agregación de ventas de contado completadas asociadas a este turno.
+    // Excluye ventas originadas a crédito (is_credit_sale === true) porque no representan dinero cobrado en este turno.
     const salesAggregation = await Sale.aggregate([
       {
         $match: {
           shift_id: activeShift._id,
           status: 'completed',
+          is_credit_sale: { $ne: true },
         },
       },
       {
@@ -123,13 +125,37 @@ export const closeShift = async (
       },
     ]);
 
+    // 2. Agregación de abonos a cuentas por cobrar recibidos durante este turno de caja.
+    // Se utiliza amount_applied_usd (equivalente contable en USD recibido y registrado).
+    const paymentsAggregation = await CustomerPayment.aggregate([
+      {
+        $match: {
+          shift_id: activeShift._id,
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalPayments: { $sum: '$amount_applied_usd' },
+        },
+      },
+    ]);
+
     const openingBalanceBig = new Big(activeShift.opening_balance.toString());
-    const totalSalesBig =
+    const totalContadoSalesBig =
       salesAggregation.length > 0 && salesAggregation[0].totalSales
         ? new Big(salesAggregation[0].totalSales.toString())
         : new Big(0);
 
-    // Arqueo: expected_balance = opening_balance + total_ventas
+    const totalPaymentsBig =
+      paymentsAggregation.length > 0 && paymentsAggregation[0].totalPayments
+        ? new Big(paymentsAggregation[0].totalPayments.toString())
+        : new Big(0);
+
+    // Total de ingresos del turno = Ventas al contado + Abonos cobrados
+    const totalSalesBig = totalContadoSalesBig.plus(totalPaymentsBig);
+
+    // Arqueo: expected_balance = opening_balance + total_ingresos
     const expectedBalanceBig = openingBalanceBig.plus(totalSalesBig);
 
     activeShift.expected_balance = Types.Decimal128.fromString(

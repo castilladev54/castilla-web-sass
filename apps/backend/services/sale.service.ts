@@ -224,6 +224,7 @@ export const createSaleProcess = async (
       : payment_method) as any,
     exchange_rate,
     status: status || "completed",
+    is_credit_sale: status === "pending",
   });
   await sale.save({ session });
 

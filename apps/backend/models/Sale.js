@@ -38,6 +38,10 @@ const saleSchema = new mongoose.Schema({
     type: String,
     enum: ['pending', 'completed', 'cancelled'],
     default: 'completed'
+  },
+  is_credit_sale: {
+    type: Boolean,
+    default: false
   }
 }, { 
   timestamps: true,

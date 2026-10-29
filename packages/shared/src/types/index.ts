@@ -190,6 +190,7 @@ export interface Sale {
   branch_id: BranchId | SaleBranchDTO;
   business_owner_id?: { _id: UserId; name: string; email?: string } | UserId | null;
   items: SaleItem[];
+  is_credit_sale?: boolean;
   createdAt: string;
   updatedAt?: string;
 }
@@ -210,6 +211,7 @@ export interface SaleDetailDTO {
   exchange_rate: string | null;
   payment_method: PaymentMethod;
   status: 'pending' | 'completed' | 'cancelled' | 'Anulada';
+  is_credit_sale?: boolean;
   sold_by: { _id: UserId; name: string; email?: string } | null;
   customer_id?: SaleCustomerDTO | null;
   business_owner_id?: { _id: UserId; name: string; email?: string } | null;
