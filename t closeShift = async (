@@ -1,0 +1,183 @@
+warning: in the working copy of 'apps/backend/controllers/shift.controller.ts', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/apps/backend/controllers/shift.controller.ts b/apps/backend/controllers/shift.controller.ts[m
+[1mindex 786a57b..d8b7b0c 100644[m
+[1m--- a/apps/backend/controllers/shift.controller.ts[m
+[1m+++ b/apps/backend/controllers/shift.controller.ts[m
+[36m@@ -5,6 +5,7 @@[m [mimport { CashShift } from '../models/CashShift.model.js';[m
+ import { Sale } from '../models/Sale.js';[m
+ import { CustomerPayment } from '../models/CustomerPayment.js';[m
+ import { BranchId } from '../types/brands.js';[m
+[32m+[m[32mimport { withTransactionRetry } from '../utils/transaction-retry.js';[m
+ [m
+ // ─── Abrir Turno de Caja ─────────────────────────────────────────────────────[m
+ [m
+[36m@@ -82,7 +83,7 @@[m [mexport const closeShift = async ([m
+   try {[m
+     const userId = req.actorId ?? req.userId;[m
+     const branchId = req.branchId;[m
+[31m-    const { closing_balance } = req.body; // Saldo real en caja reportado al cierre[m
+[32m+[m[32m    const { closing_balance } = req.body;[m
+ [m
+     if (!branchId) {[m
+       res.status(400).json({[m
+[36m@@ -92,100 +93,83 @@[m [mexport const closeShift = async ([m
+       return;[m
+     }[m
+ [m
+[31m-    const activeShift = await CashShift.findOne({[m
+[31m-      branch_id: new Types.ObjectId(String(branchId)),[m
+[31m-      cashier_id: new Types.ObjectId(String(userId)),[m
+[31m-      status: 'OPEN',[m
+[32m+[m[32m    const closedShift = await withTransactionRetry(async (session) => {[m
+[32m+[m[32m      // Conditional write to coordinate closure with payments.[m
+[32m+[m[32m      const shift = await CashShift.findOneAndUpdate([m
+[32m+[m[32m        {[m
+[32m+[m[32m          branch_id: new Types.ObjectId(String(branchId)),[m
+[32m+[m[32m          cashier_id: new Types.ObjectId(String(userId)),[m
+[32m+[m[32m          status: 'OPEN',[m
+[32m+[m[32m        },[m
+[32m+[m[32m        {[m
+[32m+[m[32m          $set: { status: 'CLOSED', closed_at: new Date() },[m
+[32m+[m[32m          $inc: { __v: 1 },[m
+[32m+[m[32m        },[m
+[32m+[m[32m        { session, returnDocument: 'after' }[m
+[32m+[m[32m      );[m
+[32m+[m
+[32m+[m[32m      if (!shift) {[m
+[32m+[m[32m        return null;[m
+[32m+[m[32m      }[m
+[32m+[m
+[32m+[m[32m      const salesAggregation = await Sale.aggregate([[m
+[32m+[m[32m        { $match: { shift_id: shift._id, status: 'completed', is_credit_sale: { $ne: true } } },[m
+[32m+[m[32m        { $group: { _id: null, totalSales: { $sum: '$total_amount' } } },[m
+[32m+[m[32m      ]).session(session);[m
+[32m+[m
+[32m+[m[32m      const paymentsAggregation = await CustomerPayment.aggregate([[m
+[32m+[m[32m        { $match: { shift_id: shift._id } },[m
+[32m+[m[32m        { $group: { _id: null, totalPayments: { $sum: '$amount_applied_usd' } } },[m
+[32m+[m[32m      ]).session(session);[m
+[32m+[m
+[32m+[m[32m      const openingBalance = new Big(shift.opening_balance.toString());[m
+[32m+[m
+[32m+[m[32m      const totalContadoSales =[m
+[32m+[m[32m        salesAggregation.length > 0 && salesAggregation[0].totalSales != null[m
+[32m+[m[32m          ? new Big(salesAggregation[0].totalSales.toString())[m
+[32m+[m[32m          : new Big(0);[m
+[32m+[m
+[32m+[m[32m      const totalPayments =[m
+[32m+[m[32m        paymentsAggregation.length > 0 && paymentsAggregation[0].totalPayments != null[m
+[32m+[m[32m          ? new Big(paymentsAggregation[0].totalPayments.toString())[m
+[32m+[m[32m          : new Big(0);[m
+[32m+[m
+[32m+[m[32m      const totalSales = totalContadoSales.plus(totalPayments);[m
+[32m+[m[32m      const expectedBalance = openingBalance.plus(totalSales);[m
+[32m+[m
+[32m+[m[32m      shift.total_sales_amount = Types.Decimal128.fromString(totalSales.toFixed(2));[m
+[32m+[m[32m      shift.expected_balance = Types.Decimal128.fromString(expectedBalance.toFixed(2));[m
+[32m+[m
+[32m+[m[32m      if (closing_balance !== undefined && closing_balance !== null) {[m
+[32m+[m[32m        const closingBig = new Big(closing_balance);[m
+[32m+[m[32m        shift.closing_balance = Types.Decimal128.fromString(closingBig.toFixed(2));[m
+[32m+[m[32m      }[m
+[32m+[m
+[32m+[m[32m      await shift.save({ session });[m
+[32m+[m[32m      return shift;[m
+     });[m
+ [m
+[31m-    if (!activeShift) {[m
+[32m+[m[32m    if (!closedShift) {[m
+       res.status(404).json({[m
+         success: false,[m
+[31m-        message:[m
+[31m-          'No se encontró un turno abierto para cerrar en esta sucursal.',[m
+[32m+[m[32m        message: 'No se encontró un turno abierto para cerrar en esta sucursal.',[m
+       });[m
+       return;[m
+     }[m
+ [m
+[31m-    // 1. Agregación de ventas de contado completadas asociadas a este turno.[m
+[31m-    // Excluye ventas originadas a crédito (is_credit_sale === true) porque no representan dinero cobrado en este turno.[m
+[31m-    const salesAggregation = await Sale.aggregate([[m
+[31m-      {[m
+[31m-        $match: {[m
+[31m-          shift_id: activeShift._id,[m
+[31m-          status: 'completed',[m
+[31m-          is_credit_sale: { $ne: true },[m
+[31m-        },[m
+[31m-      },[m
+[31m-      {[m
+[31m-        $group: {[m
+[31m-          _id: null,[m
+[31m-          totalSales: { $sum: '$total_amount' },[m
+[31m-        },[m
+[31m-      },[m
+[31m-    ]);[m
+[31m-[m
+[31m-    // 2. Agregación de abonos a cuentas por cobrar recibidos durante este turno de caja.[m
+[31m-    // Se utiliza amount_applied_usd (equivalente contable en USD recibido y registrado).[m
+[31m-    const paymentsAggregation = await CustomerPayment.aggregate([[m
+[31m-      {[m
+[31m-        $match: {[m
+[31m-          shift_id: activeShift._id,[m
+[31m-        },[m
+[31m-      },[m
+[31m-      {[m
+[31m-        $group: {[m
+[31m-          _id: null,[m
+[31m-          totalPayments: { $sum: '$amount_applied_usd' },[m
+[31m-        },[m
+[31m-      },[m
+[31m-    ]);[m
+[31m-[m
+[31m-    const openingBalanceBig = new Big(activeShift.opening_balance.toString());[m
+[31m-    const totalContadoSalesBig =[m
+[31m-      salesAggregation.length > 0 && salesAggregation[0].totalSales[m
+[31m-        ? new Big(salesAggregation[0].totalSales.toString())[m
+[31m-        : new Big(0);[m
+[31m-[m
+[31m-    const totalPaymentsBig =[m
+[31m-      paymentsAggregation.length > 0 && paymentsAggregation[0].totalPayments[m
+[31m-        ? new Big(paymentsAggregation[0].totalPayments.toString())[m
+[31m-        : new Big(0);[m
+[31m-[m
+[31m-    // Total de ingresos del turno = Ventas al contado + Abonos cobrados[m
+[31m-    const totalSalesBig = totalContadoSalesBig.plus(totalPaymentsBig);[m
+[31m-[m
+[31m-    // Arqueo: expected_balance = opening_balance + total_ingresos[m
+[31m-    const expectedBalanceBig = openingBalanceBig.plus(totalSalesBig);[m
+[31m-[m
+[31m-    activeShift.expected_balance = Types.Decimal128.fromString([m
+[31m-      expectedBalanceBig.toFixed(2)[m
+[31m-    );[m
+[31m-    activeShift.total_sales_amount = Types.Decimal128.fromString([m
+[31m-      totalSalesBig.toFixed(2)[m
+[31m-    );[m
+[31m-[m
+[31m-    if (closing_balance !== undefined && closing_balance !== null) {[m
+[31m-      const closingBig = new Big(closing_balance);[m
+[31m-      activeShift.closing_balance = Types.Decimal128.fromString([m
+[31m-        closingBig.toFixed(2)[m
+[31m-      );[m
+[31m-    }[m
+[31m-[m
+[31m-    activeShift.status = 'CLOSED';[m
+[31m-    activeShift.closed_at = new Date();[m
+[31m-    await activeShift.save();[m
+[31m-[m
+     res.status(200).json({[m
+       success: true,[m
+       message: 'Turno de caja cerrado exitosamente.',[m
+[31m-      data: activeShift,[m
+[32m+[m[32m      data: closedShift,[m
+     });[m
+   } catch (error) {[m
+     next(error);[m
+   }[m
+ };[m
+ [m
+[32m+[m
+[32m+[m
+[32m+[m
+ // ─── Obtener Turno Activo ────────────────────────────────────────────────────[m
+ [m
+ export const getActiveShift = async ([m

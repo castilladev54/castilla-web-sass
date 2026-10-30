@@ -5,6 +5,7 @@ import { CashShift } from '../models/CashShift.model.js';
 import { Sale } from '../models/Sale.js';
 import { CustomerPayment } from '../models/CustomerPayment.js';
 import { BranchId } from '../types/brands.js';
+import { withTransactionRetry } from '../utils/transaction-retry.js';
 
 // ─── Abrir Turno de Caja ─────────────────────────────────────────────────────
 
@@ -82,7 +83,7 @@ export const closeShift = async (
   try {
     const userId = req.actorId ?? req.userId;
     const branchId = req.branchId;
-    const { closing_balance } = req.body; // Saldo real en caja reportado al cierre
+    const { closing_balance } = req.body;
 
     if (!branchId) {
       res.status(400).json({
@@ -92,99 +93,82 @@ export const closeShift = async (
       return;
     }
 
-    const activeShift = await CashShift.findOne({
-      branch_id: new Types.ObjectId(String(branchId)),
-      cashier_id: new Types.ObjectId(String(userId)),
-      status: 'OPEN',
+    const closedShift = await withTransactionRetry(async (session) => {
+      // Conditional write to coordinate closure with payments.
+      const shift = await CashShift.findOneAndUpdate(
+        {
+          branch_id: new Types.ObjectId(String(branchId)),
+          cashier_id: new Types.ObjectId(String(userId)),
+          status: 'OPEN',
+        },
+        {
+          $set: { status: 'CLOSED', closed_at: new Date() },
+          $inc: { __v: 1 },
+        },
+        { session, returnDocument: 'after' }
+      );
+
+      if (!shift) {
+        return null;
+      }
+
+      const salesAggregation = await Sale.aggregate([
+        { $match: { shift_id: shift._id, status: 'completed', is_credit_sale: { $ne: true } } },
+        { $group: { _id: null, totalSales: { $sum: '$total_amount' } } },
+      ]).session(session);
+
+      const paymentsAggregation = await CustomerPayment.aggregate([
+        { $match: { shift_id: shift._id } },
+        { $group: { _id: null, totalPayments: { $sum: '$amount_applied_usd' } } },
+      ]).session(session);
+
+      const openingBalance = new Big(shift.opening_balance.toString());
+
+      const totalContadoSales =
+        salesAggregation.length > 0 && salesAggregation[0].totalSales != null
+          ? new Big(salesAggregation[0].totalSales.toString())
+          : new Big(0);
+
+      const totalPayments =
+        paymentsAggregation.length > 0 && paymentsAggregation[0].totalPayments != null
+          ? new Big(paymentsAggregation[0].totalPayments.toString())
+          : new Big(0);
+
+      const totalSales = totalContadoSales.plus(totalPayments);
+      const expectedBalance = openingBalance.plus(totalSales);
+
+      shift.total_sales_amount = Types.Decimal128.fromString(totalSales.toFixed(2));
+      shift.expected_balance = Types.Decimal128.fromString(expectedBalance.toFixed(2));
+
+      if (closing_balance !== undefined && closing_balance !== null) {
+        const closingBig = new Big(closing_balance);
+        shift.closing_balance = Types.Decimal128.fromString(closingBig.toFixed(2));
+      }
+
+      await shift.save({ session });
+      return shift;
     });
 
-    if (!activeShift) {
+    if (!closedShift) {
       res.status(404).json({
         success: false,
-        message:
-          'No se encontró un turno abierto para cerrar en esta sucursal.',
+        message: 'No se encontró un turno abierto para cerrar en esta sucursal.',
       });
       return;
     }
 
-    // 1. Agregación de ventas de contado completadas asociadas a este turno.
-    // Excluye ventas originadas a crédito (is_credit_sale === true) porque no representan dinero cobrado en este turno.
-    const salesAggregation = await Sale.aggregate([
-      {
-        $match: {
-          shift_id: activeShift._id,
-          status: 'completed',
-          is_credit_sale: { $ne: true },
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          totalSales: { $sum: '$total_amount' },
-        },
-      },
-    ]);
-
-    // 2. Agregación de abonos a cuentas por cobrar recibidos durante este turno de caja.
-    // Se utiliza amount_applied_usd (equivalente contable en USD recibido y registrado).
-    const paymentsAggregation = await CustomerPayment.aggregate([
-      {
-        $match: {
-          shift_id: activeShift._id,
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          totalPayments: { $sum: '$amount_applied_usd' },
-        },
-      },
-    ]);
-
-    const openingBalanceBig = new Big(activeShift.opening_balance.toString());
-    const totalContadoSalesBig =
-      salesAggregation.length > 0 && salesAggregation[0].totalSales
-        ? new Big(salesAggregation[0].totalSales.toString())
-        : new Big(0);
-
-    const totalPaymentsBig =
-      paymentsAggregation.length > 0 && paymentsAggregation[0].totalPayments
-        ? new Big(paymentsAggregation[0].totalPayments.toString())
-        : new Big(0);
-
-    // Total de ingresos del turno = Ventas al contado + Abonos cobrados
-    const totalSalesBig = totalContadoSalesBig.plus(totalPaymentsBig);
-
-    // Arqueo: expected_balance = opening_balance + total_ingresos
-    const expectedBalanceBig = openingBalanceBig.plus(totalSalesBig);
-
-    activeShift.expected_balance = Types.Decimal128.fromString(
-      expectedBalanceBig.toFixed(2)
-    );
-    activeShift.total_sales_amount = Types.Decimal128.fromString(
-      totalSalesBig.toFixed(2)
-    );
-
-    if (closing_balance !== undefined && closing_balance !== null) {
-      const closingBig = new Big(closing_balance);
-      activeShift.closing_balance = Types.Decimal128.fromString(
-        closingBig.toFixed(2)
-      );
-    }
-
-    activeShift.status = 'CLOSED';
-    activeShift.closed_at = new Date();
-    await activeShift.save();
-
     res.status(200).json({
       success: true,
       message: 'Turno de caja cerrado exitosamente.',
-      data: activeShift,
+      data: closedShift,
     });
   } catch (error) {
     next(error);
   }
 };
+
+
+
 
 // ─── Obtener Turno Activo ────────────────────────────────────────────────────
 

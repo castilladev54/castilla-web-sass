@@ -467,4 +467,66 @@ describe('CustomerPayment — integración HTTP', () => {
     expect(updatedSale!.is_credit_sale).toBe(true);
     expect(Number(updatedSale!.total_amount.toString())).toBe(100);
   });
+
+  it('coordina un abono concurrente con el cierre del turno sin perder ingresos', async () => {
+    const ctx = await createContext();
+    const shiftId = await openShift(ctx);
+
+    const sale = await createPendingSale(
+      { ...ctx, shiftId },
+      '100.00',
+    );
+
+    const idempotencyKey = crypto.randomUUID();
+
+    // Ambas solicitudes compiten por el mismo turno.
+    const [paymentResponse, closeResponse] = await Promise.all([
+      paymentRequest(
+        ctx.branchId,
+        sale._id.toString(),
+        idempotencyKey,
+        '40.00',
+      ),
+      request(app)
+        .post('/api/shifts/close')
+        .set({
+          ...authHeaders,
+          'x-branch-id': ctx.branchId,
+        })
+        .send({ closing_balance: '140.00' }),
+    ]);
+
+    // El cierre siempre debe terminar en un estado válido.
+    expect([200, 404]).toContain(closeResponse.status);
+
+    const paymentCount = await CustomerPayment.countDocuments({
+      sale_id: sale._id,
+    });
+
+    const payment: any = await CustomerPayment.findOne({
+      sale_id: sale._id,
+    });
+
+    const shift: any = await CashShift.findById(shiftId);
+
+    expect(shift).not.toBeNull();
+
+    if (paymentResponse.status === 201) {
+      // Si el abono se aceptó, debe existir exactamente una vez.
+      expect(paymentCount).toBe(1);
+      expect(payment).not.toBeNull();
+      expect(payment!.shift_id.toString()).toBe(shiftId);
+
+      // El cierre debe contabilizarlo o, si el turno siguió abierto,
+      // no debemos asumir que el arqueo ya se ejecutó.
+      if (shift!.status === 'CLOSED') {
+        expect(shift!.total_sales_amount.toString()).toBe('40.00');
+        expect(shift!.expected_balance.toString()).toBe('140.00');
+      }
+    } else {
+      // Si el cierre ganó la carrera, el abono nuevo debe rechazarse.
+      expect(paymentResponse.status).toBe(403);
+      expect(paymentCount).toBe(0);
+    }
+  });
 });
