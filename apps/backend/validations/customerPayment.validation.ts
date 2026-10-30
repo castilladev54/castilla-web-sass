@@ -1,18 +1,50 @@
 import { z } from 'zod';
+import Big from 'big.js';
 import { idParamSchema } from '@inventory/shared/validations';
 
-const decimalStringSchema = z
+/**
+ * Validador estricto para importes monetarios recibidos.
+ * - Formato decimal positivo con hasta 2 decimales.
+ * - Valida mayor a 0 utilizando Big.js para evitar distorsiones de Number binario.
+ */
+const monetaryAmountSchema = z
   .union([z.string(), z.number()])
   .transform((value) => String(value))
   .refine(
-    (value) => /^\d+(\.\d+)?$/.test(value) && Number.isFinite(Number(value)),
-    'Debe ser un importe decimal válido.',
+    (value) => /^\d+(\.\d{1,2})?$/.test(value),
+    'El importe debe ser un número decimal válido con hasta 2 decimales.',
   )
-  .refine((value) => Number(value) > 0, 'Debe ser mayor que cero.');
+  .refine((value) => {
+    try {
+      return Big(value).gt(0);
+    } catch {
+      return false;
+    }
+  }, 'El importe debe ser mayor que cero.');
+
+/**
+ * Validador para tasa de cambio.
+ * - Formato decimal positivo sin limitación fija de 2 decimales (permite tasas extendidas).
+ * - Valida mayor a 0 con Big.js.
+ */
+const exchangeRateSchema = z
+  .union([z.string(), z.number()])
+  .transform((value) => String(value))
+  .refine(
+    (value) => /^\d+(\.\d+)?$/.test(value),
+    'La tasa de cambio debe ser un número decimal válido.',
+  )
+  .refine((value) => {
+    try {
+      return Big(value).gt(0);
+    } catch {
+      return false;
+    }
+  }, 'La tasa de cambio debe ser mayor que cero.');
 
 const customerPaymentBodySchema = z
   .object({
-    amountReceived: decimalStringSchema,
+    amountReceived: monetaryAmountSchema,
     currency: z.enum(['USD', 'VES']),
     paymentMethod: z.enum([
       'Efectivo',
@@ -23,7 +55,7 @@ const customerPaymentBodySchema = z
       'Zelle',
       'BIOPAGO',
     ]),
-    exchangeRate: decimalStringSchema.optional(),
+    exchangeRate: exchangeRateSchema.optional(),
     exchangeRateType: z.enum(['COMERCIAL', 'NO_APLICA']).optional(),
   })
   .strict()

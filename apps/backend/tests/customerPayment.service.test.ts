@@ -873,5 +873,90 @@ const sale = await createSale(ctx, { total_amount: '100.00' });
       await CustomerPayment.countDocuments({ sale_id: sale._id }),
     ).toBe(0);
   });
+
+  it('Política de precisión: Rechaza importes con más de dos decimales', async () => {
+    const ctx = await createTestContext();
+    const sale = await createSale(ctx, { total_amount: '100.00' });
+
+    await expect(
+      registerCustomerPayment({
+        saleId: sale._id.toString(),
+        businessOwnerId: ctx.businessOwnerId,
+        actorId: ctx.actorId,
+        shiftId: ctx.shiftId,
+        amountReceived: '10.005',
+        currency: 'USD',
+        paymentMethod: 'Efectivo',
+        exchangeRateType: 'NO_APLICA',
+        idempotencyKey: `decimal-overflow-${Date.now()}`,
+      }),
+    ).rejects.toThrow('El importe recibido no puede tener más de dos decimales.');
+  });
+
+  it('Garantía de contexto: Rechaza abono si el turno no pertenece a la sucursal de la venta', async () => {
+    const ctx = await createTestContext();
+    const otherBranch = await Branch.create({
+      name: 'Otra Sucursal',
+      address: 'Calle 2',
+      owner_id: ctx.businessOwnerId,
+      is_active: true,
+    });
+    const foreignShift = await CashShift.create({
+      branch_id: otherBranch._id,
+      cashier_id: ctx.actorId,
+      user_id: ctx.actorId,
+      status: 'OPEN',
+      opening_balance: 100,
+    });
+
+    const sale = await createSale(ctx, { total_amount: '100.00' });
+
+    await expect(
+      registerCustomerPayment({
+        saleId: sale._id.toString(),
+        businessOwnerId: ctx.businessOwnerId,
+        actorId: ctx.actorId,
+        shiftId: foreignShift._id.toString(),
+        amountReceived: '10.00',
+        currency: 'USD',
+        paymentMethod: 'Efectivo',
+        exchangeRateType: 'NO_APLICA',
+        idempotencyKey: `branch-mismatch-${Date.now()}`,
+      }),
+    ).rejects.toThrow('El turno de caja no pertenece a la sucursal de la venta.');
+  });
+
+  it('Garantía de contexto: Rechaza abono si el turno no corresponde al operador autenticado', async () => {
+    const ctx = await createTestContext();
+    const otherCashier = await User.create({
+      name: 'Otro Cajero',
+      email: `other-${Date.now()}@example.com`,
+      password: 'password123',
+      role: 'employee',
+    });
+    const otherCashierShift = await CashShift.create({
+      branch_id: ctx.branchId,
+      cashier_id: otherCashier._id,
+      user_id: otherCashier._id,
+      status: 'OPEN',
+      opening_balance: 100,
+    });
+
+    const sale = await createSale(ctx, { total_amount: '100.00' });
+
+    await expect(
+      registerCustomerPayment({
+        saleId: sale._id.toString(),
+        businessOwnerId: ctx.businessOwnerId,
+        actorId: ctx.actorId,
+        shiftId: otherCashierShift._id.toString(),
+        amountReceived: '10.00',
+        currency: 'USD',
+        paymentMethod: 'Efectivo',
+        exchangeRateType: 'NO_APLICA',
+        idempotencyKey: `cashier-mismatch-${Date.now()}`,
+      }),
+    ).rejects.toThrow('El turno de caja no corresponde al operador autenticado.');
+  });
 });
 

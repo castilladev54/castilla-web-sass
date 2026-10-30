@@ -529,4 +529,27 @@ describe('CustomerPayment — integración HTTP', () => {
       expect(paymentCount).toBe(0);
     }
   });
+
+  it('rechaza con 400 Bad Request si el importe recibido tiene más de dos decimales', async () => {
+    const ctx = await createContext();
+    const shiftId = await openShift(ctx);
+
+    const sale = await createPendingSale({
+      ...ctx,
+      shiftId,
+    });
+
+    const response = await paymentRequest(
+      ctx.branchId,
+      sale._id.toString(),
+      crypto.randomUUID(),
+      '20.005',
+    );
+
+    expect(response.status).toBe(400);
+    const paymentCount = await CustomerPayment.countDocuments({
+      sale_id: sale._id,
+    });
+    expect(paymentCount).toBe(0);
+  });
 });

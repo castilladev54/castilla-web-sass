@@ -3,6 +3,7 @@ import Big from 'big.js';
 import { Sale } from '../models/Sale.js';
 import { CustomerPayment } from '../models/CustomerPayment.js';
 import { CashShift } from '../models/CashShift.model.js';
+import { Branch } from '../models/Branch.js';
 import { withTransactionRetry } from '../utils/transaction-retry.js';
 import {
   AppError,
@@ -162,6 +163,15 @@ const validatePaymentInput = (input: RegisterCustomerPaymentInput) => {
     throw new InvalidPaymentError(`Método de pago no permitido: ${paymentMethod}`);
   }
 
+  const decimalParts = amountReceived.split('.');
+  const decimalPlaces = decimalParts[1]?.length ?? 0;
+
+  if (decimalPlaces > 2) {
+    throw new InvalidPaymentError(
+      'El importe recibido no puede tener más de dos decimales.',
+    );
+  }
+
   let amountReceivedBig: Big.Big;
   try {
     amountReceivedBig = Big(amountReceived);
@@ -172,6 +182,10 @@ const validatePaymentInput = (input: RegisterCustomerPaymentInput) => {
   if (amountReceivedBig.lte(0)) {
     throw new InvalidPaymentError('El importe recibido debe ser mayor que cero.');
   }
+
+  // Normalización única de partida: garantiza que el registro y el importe aplicado a la deuda
+  // partan exactamente del mismo valor monetario.
+  const normalizedAmountReceived = amountReceivedBig.round(2, Big.roundHalfUp);
 
   let amountAppliedUSDStr: string;
 
@@ -197,7 +211,7 @@ const validatePaymentInput = (input: RegisterCustomerPaymentInput) => {
       throw new InvalidPaymentError('La tasa de cambio debe ser mayor que cero.');
     }
 
-    amountAppliedUSDStr = roundToTwoDecimals(amountReceivedBig.div(rateBig));
+    amountAppliedUSDStr = roundToTwoDecimals(normalizedAmountReceived.div(rateBig));
   } else {
     // USD
     if (exchangeRateType !== 'NO_APLICA') {
@@ -210,7 +224,7 @@ const validatePaymentInput = (input: RegisterCustomerPaymentInput) => {
       throw new InvalidPaymentError('Los pagos en USD no deben llevar tasa de cambio.');
     }
 
-    amountAppliedUSDStr = roundToTwoDecimals(amountReceivedBig);
+    amountAppliedUSDStr = roundToTwoDecimals(normalizedAmountReceived);
   }
 
   if (Big(amountAppliedUSDStr).lte(0)) {
@@ -220,7 +234,7 @@ const validatePaymentInput = (input: RegisterCustomerPaymentInput) => {
   }
 
   return {
-    amountReceivedStr: amountReceivedBig.toFixed(2),
+    amountReceivedStr: normalizedAmountReceived.toFixed(2),
     amountAppliedUSDStr,
     exchangeRateStr: exchangeRate ? Big(exchangeRate).toString() : undefined,
   };
@@ -349,7 +363,27 @@ export const registerCustomerPayment = async (
         isDuplicate: true,
       };
     }
-    // 2. Solo para abonos nuevos, exigir turno abierto
+    // 2. Buscar y validar la venta dentro del negocio correspondiente
+    const sale = await Sale.findOne({
+      _id: saleId,
+      business_owner_id: businessOwnerId,
+    }).session(session);
+
+    if (!sale) {
+      throw new SaleNotFoundError();
+    }
+
+    // 3. Confirmar que la venta tenga un cliente
+    if (!sale.customer_id) {
+      throw new SaleMissingCustomerError();
+    }
+
+    // 4. Confirmar que la venta esté pendiente
+    if (sale.status !== 'pending') {
+      throw new InvalidSaleStatusError(sale.status);
+    }
+
+    // 5. Solo para abonos nuevos, exigir turno abierto y verificar garantías de contexto
     if (!shiftId) {
       throw new CashShiftNotFoundError();
     }
@@ -370,6 +404,34 @@ export const registerCustomerPayment = async (
 
     if (!shift) {
       throw new CashShiftNotFoundError();
+    }
+
+    // Garantías de Contexto:
+    // a. El turno de caja debe pertenecer a la sucursal de la venta
+    if (shift.branch_id.toString() !== sale.branch_id.toString()) {
+      throw new InvalidPaymentError(
+        'El turno de caja no pertenece a la sucursal de la venta.',
+      );
+    }
+
+    // b. El turno de caja debe corresponder al operador que registra el abono
+    const shiftCashierId = shift.cashier_id?.toString() ?? shift.user_id?.toString();
+    if (shiftCashierId && shiftCashierId !== actorId) {
+      throw new InvalidPaymentError(
+        'El turno de caja no corresponde al operador autenticado.',
+      );
+    }
+
+    // c. La sucursal debe pertenecer al negocio que procesa la operación
+    const branch = await Branch.findOne({
+      _id: shift.branch_id,
+      owner_id: businessOwnerId,
+    }).session(session);
+
+    if (!branch) {
+      throw new InvalidPaymentError(
+        'La sucursal del turno de caja no pertenece al negocio.',
+      );
     }
 
     if (currency === 'VES') {
@@ -417,25 +479,6 @@ export const registerCustomerPayment = async (
           'El importe aplicado a la deuda en USD tras redondeo debe ser mayor a cero.',
         );
       }
-    }
-    // 3. Buscar la venta dentro del negocio correspondiente
-    const sale = await Sale.findOne({
-      _id: saleId,
-      business_owner_id: businessOwnerId,
-    }).session(session);
-
-    if (!sale) {
-      throw new SaleNotFoundError();
-    }
-
-    // 4. Confirmar que la venta tenga un cliente
-    if (!sale.customer_id) {
-      throw new SaleMissingCustomerError();
-    }
-
-    // 5. Confirmar que la venta esté pendiente
-    if (sale.status !== 'pending') {
-      throw new InvalidSaleStatusError(sale.status);
     }
 
     // 6. SERIALIZACIÓN CONCURRENTE:
