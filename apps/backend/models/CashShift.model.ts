@@ -11,6 +11,17 @@ export interface ICashShift {
   expected_balance?: Types.Decimal128;
   closing_balance?: Types.Decimal128;
   total_sales_amount?: Types.Decimal128;
+  // Desglose físico por moneda (USD y VES)
+  opening_balance_usd?: Types.Decimal128;
+  opening_balance_ves?: Types.Decimal128;
+  expected_balance_usd?: Types.Decimal128;
+  expected_balance_ves?: Types.Decimal128;
+  closing_balance_usd?: Types.Decimal128;
+  closing_balance_ves?: Types.Decimal128;
+  total_sales_usd?: Types.Decimal128;
+  total_sales_ves?: Types.Decimal128;
+  total_payments_usd?: Types.Decimal128;
+  total_payments_ves?: Types.Decimal128;
   opened_at: Date;
   closed_at?: Date;
 }
@@ -61,6 +72,47 @@ const CashShiftSchema = new Schema<ICashShiftDocument>(
       type: Schema.Types.Decimal128,
       default: null,
     },
+    // Desglose por moneda (USD y VES)
+    opening_balance_usd: {
+      type: Schema.Types.Decimal128,
+      default: null,
+    },
+    opening_balance_ves: {
+      type: Schema.Types.Decimal128,
+      default: null,
+    },
+    expected_balance_usd: {
+      type: Schema.Types.Decimal128,
+      default: null,
+    },
+    expected_balance_ves: {
+      type: Schema.Types.Decimal128,
+      default: null,
+    },
+    closing_balance_usd: {
+      type: Schema.Types.Decimal128,
+      default: null,
+    },
+    closing_balance_ves: {
+      type: Schema.Types.Decimal128,
+      default: null,
+    },
+    total_sales_usd: {
+      type: Schema.Types.Decimal128,
+      default: null,
+    },
+    total_sales_ves: {
+      type: Schema.Types.Decimal128,
+      default: null,
+    },
+    total_payments_usd: {
+      type: Schema.Types.Decimal128,
+      default: null,
+    },
+    total_payments_ves: {
+      type: Schema.Types.Decimal128,
+      default: null,
+    },
     opened_at: {
       type: Date,
       default: Date.now,
@@ -75,10 +127,30 @@ const CashShiftSchema = new Schema<ICashShiftDocument>(
     timestamps: true,
     toJSON: {
       transform(_doc, ret) {
-        if (ret.opening_balance) ret.opening_balance = ret.opening_balance.toString() as any;
-        if (ret.expected_balance) ret.expected_balance = ret.expected_balance.toString() as any;
-        if (ret.closing_balance) ret.closing_balance = ret.closing_balance.toString() as any;
-        if (ret.total_sales_amount) ret.total_sales_amount = ret.total_sales_amount.toString() as any;
+        const decimalKeys = [
+          'opening_balance',
+          'expected_balance',
+          'closing_balance',
+          'total_sales_amount',
+          'opening_balance_usd',
+          'opening_balance_ves',
+          'expected_balance_usd',
+          'expected_balance_ves',
+          'closing_balance_usd',
+          'closing_balance_ves',
+          'total_sales_usd',
+          'total_sales_ves',
+          'total_payments_usd',
+          'total_payments_ves',
+        ] as const satisfies readonly (keyof ICashShiftDocument)[];
+
+        for (const key of decimalKeys) {
+          const value = ret[key];
+
+          if (value != null) {
+            Object.assign(ret, { [key]: value.toString() });
+          }
+        }
         return ret;
       },
     },

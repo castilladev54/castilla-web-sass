@@ -12,6 +12,7 @@ import { Branch } from '../models/Branch.ts';
 import { Inventory } from '../models/Inventory.ts';
 import { CashShift } from '../models/CashShift.model.ts';
 import { Customer } from '../models/Customer.ts';
+import { CustomerPayment } from '../models/CustomerPayment.js';
 import bcryptjs from 'bcryptjs';
 import crypto from 'crypto';
 import { getAuthHeadersForUser } from './helpers/auth.js';
@@ -83,6 +84,7 @@ afterEach(async () => {
   await Product.deleteMany({});
   await Inventory.deleteMany({});
   await Customer.deleteMany({});
+  await CustomerPayment.deleteMany({});
   vi.clearAllMocks();
 });
 
@@ -356,5 +358,132 @@ describe('CashShift & Sales Integration Test Suite', () => {
     expect(activeRes.body.data).not.toBeNull();
     expect(activeRes.body.data.status).toBe('OPEN');
     expect(activeRes.body.data.opening_balance).toBe('300.00');
+  });
+
+  // ─── Test 7: Conciliación multimoneda (USD y VES) ──────────────────────────
+  it('Test 7: Debe conciliar saldos físicos por separado en USD y VES al cerrar el turno', async () => {
+    // Crear producto y stock propios para este test.
+    productId = await createProductWithStock('Producto Test 7', 50, 10);
+
+    // 1. Abrir turno con saldos independientes en USD y VES
+    const openRes = await request(app)
+      .post('/api/shifts/open')
+      .set({ ...authHeaders, 'x-branch-id': branchId.toString() })
+      .send({
+        opening_balance_usd: '100.00',
+        opening_balance_ves: '500.00',
+      });
+
+    expect(openRes.status).toBe(201);
+    const shift = openRes.body.data;
+    expect(shift.opening_balance_usd).toBe('100.00');
+    expect(shift.opening_balance_ves).toBe('500.00');
+
+    // 2. Venta al contado de $50.00
+    const saleRes = await request(app)
+      .post('/api/sales')
+      .set({
+        ...authHeaders,
+        'x-branch-id': branchId.toString(),
+        'x-shift-id': shift._id,
+      })
+      .set('x-idempotency-key', crypto.randomUUID())
+      .send({
+        customer_id: null,
+        payment_method: 'Efectivo',
+        items: [{ product_id: productId, quantity: '1', unit_price: '50.00' }],
+      });
+
+    expect(saleRes.status).toBe(201);
+    expect(saleRes.body.sale.total_amount).toBe('50');
+
+    // 3. Crear abono recibido en VES (1000.00 VES) vinculado al turno
+    await CustomerPayment.create({
+      sale_id: new mongoose.Types.ObjectId(),
+      customer_id: new mongoose.Types.ObjectId(),
+      business_owner_id: userId,
+      shift_id: shift._id,
+      received_by: userId,
+      amount_received: '1000.00',
+      currency: 'VES',
+      amount_applied_usd: '20.00',
+      exchange_rate: '50.00',
+      exchange_rate_type: 'COMERCIAL',
+      payment_method: 'Pago Movil',
+      idempotency_key: crypto.randomUUID(),
+      date: new Date(),
+    });
+
+    // 4. Cerrar turno enviando arqueo físico para ambas monedas
+    const closeRes = await request(app)
+      .post('/api/shifts/close')
+      .set({ ...authHeaders, 'x-branch-id': branchId.toString() })
+      .send({
+        closing_balance_usd: '150.00',
+        closing_balance_ves: '500.00',
+      });
+
+    expect(closeRes.status).toBe(200);
+    const closed = closeRes.body.data;
+    expect(closed.status).toBe('CLOSED');
+    // Saldo esperado USD: 100.00 (apertura) + 50.00 (venta contado) = 150.00
+    expect(closed.expected_balance_usd).toBe('150.00');
+    expect(closed.closing_balance_usd).toBe('150.00');
+    // Saldo esperado VES: 500.00 (apertura) + 0.00 (abono electrónico no aumenta gaveta física) = 500.00
+    expect(closed.expected_balance_ves).toBe('500.00');
+    expect(closed.closing_balance_ves).toBe('500.00');
+    expect(closed.total_payments_ves).toBe('1000.00');
+  });
+
+  // ─── Test 8: Conciliación multimoneda con abono físico en VES ─────────────
+  it('Test 8: Debe incrementar el saldo físico en VES cuando se registra un abono en efectivo', async () => {
+    // 1. Abrir turno con saldos independientes en USD y VES
+    const openRes = await request(app)
+      .post('/api/shifts/open')
+      .set({ ...authHeaders, 'x-branch-id': branchId.toString() })
+      .send({
+        opening_balance_usd: '100.00',
+        opening_balance_ves: '500.00',
+      });
+
+    expect(openRes.status).toBe(201);
+    const shift = openRes.body.data;
+    expect(shift.opening_balance_usd).toBe('100.00');
+    expect(shift.opening_balance_ves).toBe('500.00');
+
+    // 2. Crear abono recibido en VES físico (300.00 VES en Efectivo) vinculado al turno
+    await CustomerPayment.create({
+      sale_id: new mongoose.Types.ObjectId(),
+      customer_id: new mongoose.Types.ObjectId(),
+      business_owner_id: userId,
+      shift_id: shift._id,
+      received_by: userId,
+      amount_received: '300.00',
+      currency: 'VES',
+      amount_applied_usd: '6.00',
+      exchange_rate: '50.00',
+      exchange_rate_type: 'COMERCIAL',
+      payment_method: 'Efectivo',
+      idempotency_key: crypto.randomUUID(),
+      date: new Date(),
+    });
+
+    // 3. Cerrar turno enviando arqueo físico: 500.00 apertura + 300.00 efectivo = 800.00 VES
+    const closeRes = await request(app)
+      .post('/api/shifts/close')
+      .set({ ...authHeaders, 'x-branch-id': branchId.toString() })
+      .send({
+        closing_balance_usd: '100.00',
+        closing_balance_ves: '800.00',
+      });
+
+    expect(closeRes.status).toBe(200);
+    const closed = closeRes.body.data;
+    expect(closed.status).toBe('CLOSED');
+    expect(closed.expected_balance_usd).toBe('100.00');
+    expect(closed.closing_balance_usd).toBe('100.00');
+    expect(closed.expected_balance_ves).toBe('800.00');
+    expect(closed.closing_balance_ves).toBe('800.00');
+    expect(closed.total_payments_ves).toBe('300.00');
   });
 });

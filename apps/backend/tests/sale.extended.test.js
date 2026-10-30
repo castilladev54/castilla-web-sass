@@ -11,6 +11,7 @@ import { SaleDetail } from '../models/SaleDetail.js';
 import { Branch } from '../models/Branch.js';
 import { CashShift } from '../models/CashShift.model.ts';
 import { Inventory } from '../models/Inventory.js';
+import { CustomerPayment } from '../models/CustomerPayment.js';
 import bcryptjs from 'bcryptjs';
 import { getAuthHeadersForUser } from './helpers/auth.js';
 
@@ -330,6 +331,54 @@ describe('Sale Controllers — Extended Tests (Cache + Edge Cases)', () => {
       const galleta = await Inventory.findOne({ product_id: product2Id, branch_id: branchId });
       expect(agua.quantity).toBe(17);   // 20 - 3
       expect(galleta.quantity).toBe(8); // 10 - 2
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Saldo real de cuentas por cobrar (pendingAmount)
+  // ─────────────────────────────────────────────────────────────────────
+  describe('GET /api/sales — saldo de cuentas por cobrar (pendingAmount)', () => {
+    it('debe restar los abonos de CustomerPayment al calcular pendingAmount', async () => {
+      // 1. Crear venta a crédito pendiente por $100.00
+      const sale = await Sale.create({
+        customer_id: userId,
+        business_owner_id: userId,
+        branch_id: branchId,
+        shift_id: shiftId,
+        sold_by: userId,
+        total_amount: '100.00',
+        payment_method: 'Efectivo',
+        status: 'pending',
+        is_credit_sale: true,
+      });
+
+      // 2. Registrar abono de $40.00
+      await CustomerPayment.create({
+        sale_id: sale._id,
+        customer_id: userId,
+        business_owner_id: userId,
+        shift_id: shiftId,
+        received_by: userId,
+        amount_received: '40.00',
+        currency: 'USD',
+        amount_applied_usd: '40.00',
+        exchange_rate_type: 'NO_APLICA',
+        payment_method: 'Efectivo',
+        idempotency_key: `pay-test-${Date.now()}`,
+        date: new Date(),
+      });
+
+      // 3. Consultar listado de ventas pendientes
+      const response = await request(app)
+        .get('/api/sales?status=pending')
+        .set({ ...authHeaders, 'x-branch-id': branchId.toString(), 'x-shift-id': shiftId });
+
+      expect(response.status).toBe(200);
+      expect(response.body.pendingAmount).toBe('60.00');
+      expect(response.body.sales).toHaveLength(1);
+      expect(response.body.sales[0].total_amount).toBe('100.00');
+      expect(response.body.sales[0].paid_amount).toBe('40.00');
+      expect(response.body.sales[0].remaining_balance).toBe('60.00');
     });
   });
 });

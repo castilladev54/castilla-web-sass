@@ -17,7 +17,11 @@ export const openShift = async (
   try {
     const userId = req.actorId ?? req.userId;
     const branchId = req.branchId;
-    const { opening_balance } = req.body;
+    const {
+      opening_balance,
+      opening_balance_usd,
+      opening_balance_ves,
+    } = req.body;
 
     if (!branchId) {
       res.status(400).json({
@@ -27,11 +31,14 @@ export const openShift = async (
       return;
     }
 
+    const rawOpeningUSD =
+      opening_balance_usd !== undefined ? opening_balance_usd : opening_balance;
+
     if (
-      opening_balance === undefined ||
-      opening_balance === null ||
-      isNaN(Number(opening_balance)) ||
-      Number(opening_balance) < 0
+      rawOpeningUSD === undefined ||
+      rawOpeningUSD === null ||
+      isNaN(Number(rawOpeningUSD)) ||
+      Number(rawOpeningUSD) < 0
     ) {
       res.status(400).json({
         success: false,
@@ -41,13 +48,29 @@ export const openShift = async (
       return;
     }
 
+    if (
+      opening_balance_ves !== undefined &&
+      opening_balance_ves !== null &&
+      (isNaN(Number(opening_balance_ves)) || Number(opening_balance_ves) < 0)
+    ) {
+      res.status(400).json({
+        success: false,
+        message:
+          'opening_balance_ves debe ser un valor numérico no negativo.',
+      });
+      return;
+    }
+
     // Formateo exacto usando Big.js antes de convertir a Decimal128
-    const openingBig = new Big(opening_balance);
+    const openingBigUSD = new Big(rawOpeningUSD);
+    const openingBigVES = new Big(opening_balance_ves ?? '0.00');
 
     const newShift = await CashShift.create({
       branch_id: new Types.ObjectId(String(branchId)),
       cashier_id: new Types.ObjectId(String(userId)),
-      opening_balance: Types.Decimal128.fromString(openingBig.toFixed(2)),
+      opening_balance: Types.Decimal128.fromString(openingBigUSD.toFixed(2)),
+      opening_balance_usd: Types.Decimal128.fromString(openingBigUSD.toFixed(2)),
+      opening_balance_ves: Types.Decimal128.fromString(openingBigVES.toFixed(2)),
       status: 'OPEN',
       opened_at: new Date(),
     });
@@ -83,7 +106,7 @@ export const closeShift = async (
   try {
     const userId = req.actorId ?? req.userId;
     const branchId = req.branchId;
-    const { closing_balance } = req.body;
+    const { closing_balance, closing_balance_usd, closing_balance_ves } = req.body;
 
     if (!branchId) {
       res.status(400).json({
@@ -119,30 +142,92 @@ export const closeShift = async (
 
       const paymentsAggregation = await CustomerPayment.aggregate([
         { $match: { shift_id: shift._id } },
-        { $group: { _id: null, totalPayments: { $sum: '$amount_applied_usd' } } },
+        {
+          $group: {
+            _id: {
+              currency: '$currency',
+              payment_method: '$payment_method',
+            },
+            totalReceived: { $sum: '$amount_received' },
+          },
+        },
       ]).session(session);
 
-      const openingBalance = new Big(shift.opening_balance.toString());
+      let paymentsUSD = new Big(0);
+      let paymentsVES = new Big(0);
 
-      const totalContadoSales =
+      let cashPaymentsUSD = new Big(0);
+      let cashPaymentsVES = new Big(0);
+
+      for (const payment of paymentsAggregation) {
+        const received = new Big(
+          payment.totalReceived?.toString() ?? '0'
+        );
+
+        const isPhysicalCash = ['Efectivo', 'Divisas'].includes(
+          payment._id.payment_method
+        );
+
+        if (payment._id.currency === 'USD') {
+          paymentsUSD = paymentsUSD.plus(received);
+
+          if (isPhysicalCash) {
+            cashPaymentsUSD = cashPaymentsUSD.plus(received);
+          }
+        } else if (payment._id.currency === 'VES') {
+          paymentsVES = paymentsVES.plus(received);
+
+          if (isPhysicalCash) {
+            cashPaymentsVES = cashPaymentsVES.plus(received);
+          }
+        }
+      }
+
+      const openingBalanceUSD = shift.opening_balance_usd
+        ? new Big(shift.opening_balance_usd.toString())
+        : new Big(shift.opening_balance.toString());
+
+      const openingBalanceVES = shift.opening_balance_ves
+        ? new Big(shift.opening_balance_ves.toString())
+        : new Big(0);
+
+      const totalContadoSalesUSD =
         salesAggregation.length > 0 && salesAggregation[0].totalSales != null
           ? new Big(salesAggregation[0].totalSales.toString())
           : new Big(0);
 
-      const totalPayments =
-        paymentsAggregation.length > 0 && paymentsAggregation[0].totalPayments != null
-          ? new Big(paymentsAggregation[0].totalPayments.toString())
-          : new Big(0);
+      const totalSalesUSD = totalContadoSalesUSD.plus(paymentsUSD);
 
-      const totalSales = totalContadoSales.plus(totalPayments);
-      const expectedBalance = openingBalance.plus(totalSales);
+      // Los abonos electrónicos no aumentan el efectivo físico.
+      const expectedBalanceUSD = openingBalanceUSD
+        .plus(totalContadoSalesUSD)
+        .plus(cashPaymentsUSD);
 
-      shift.total_sales_amount = Types.Decimal128.fromString(totalSales.toFixed(2));
-      shift.expected_balance = Types.Decimal128.fromString(expectedBalance.toFixed(2));
+      const expectedBalanceVES = openingBalanceVES
+        .plus(cashPaymentsVES);
 
-      if (closing_balance !== undefined && closing_balance !== null) {
-        const closingBig = new Big(closing_balance);
-        shift.closing_balance = Types.Decimal128.fromString(closingBig.toFixed(2));
+      shift.total_sales_amount = Types.Decimal128.fromString(totalSalesUSD.toFixed(2));
+      shift.expected_balance = Types.Decimal128.fromString(expectedBalanceUSD.toFixed(2));
+
+      shift.total_sales_usd = Types.Decimal128.fromString(totalContadoSalesUSD.toFixed(2));
+      shift.total_payments_usd = Types.Decimal128.fromString(paymentsUSD.toFixed(2));
+      shift.expected_balance_usd = Types.Decimal128.fromString(expectedBalanceUSD.toFixed(2));
+
+      shift.total_payments_ves = Types.Decimal128.fromString(paymentsVES.toFixed(2));
+      shift.expected_balance_ves = Types.Decimal128.fromString(expectedBalanceVES.toFixed(2));
+
+      const rawClosingUSD =
+        closing_balance_usd !== undefined ? closing_balance_usd : closing_balance;
+
+      if (rawClosingUSD !== undefined && rawClosingUSD !== null) {
+        const closingBigUSD = new Big(rawClosingUSD);
+        shift.closing_balance = Types.Decimal128.fromString(closingBigUSD.toFixed(2));
+        shift.closing_balance_usd = Types.Decimal128.fromString(closingBigUSD.toFixed(2));
+      }
+
+      if (closing_balance_ves !== undefined && closing_balance_ves !== null) {
+        const closingBigVES = new Big(closing_balance_ves);
+        shift.closing_balance_ves = Types.Decimal128.fromString(closingBigVES.toFixed(2));
       }
 
       await shift.save({ session });

@@ -7,7 +7,9 @@ import {
   bumpCacheVersion,
   buildPaginatedKey,
 } from "../lib/redis.js";
+import Big from "big.js";
 import { Sale } from "../models/Sale.js";
+import { CustomerPayment } from "../models/CustomerPayment.js";
 import { ExchangeRate } from "../models/ExchangeRate.js";
 import { SaleDetail } from "../models/SaleDetail.js";
 import {
@@ -359,6 +361,42 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
           Sale.aggregate([
             { $match: aggFilter },
             {
+              $lookup: {
+                from: "customerpayments",
+                localField: "_id",
+                foreignField: "sale_id",
+                as: "payments",
+              },
+            },
+            {
+              $addFields: {
+                paymentsAppliedUSD: {
+                  $sum: "$payments.amount_applied_usd",
+                },
+              },
+            },
+            {
+              $addFields: {
+                netPending: {
+                  $cond: [
+                    { $eq: ["$status", "pending"] },
+                    {
+                      $max: [
+                        0,
+                        {
+                          $subtract: [
+                            "$total_amount",
+                            { $ifNull: ["$paymentsAppliedUSD", 0] },
+                          ],
+                        },
+                      ],
+                    },
+                    0,
+                  ],
+                },
+              },
+            },
+            {
               $group: {
                 _id: null,
                 completedAmount: {
@@ -377,9 +415,7 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
                   },
                 },
                 pendingAmount: {
-                  $sum: {
-                    $cond: [{ $eq: ["$status", "pending"] }, "$total_amount", 0],
-                  },
+                  $sum: "$netPending",
                 },
               },
             },
@@ -388,21 +424,57 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
 
         const completedAmount =
           totalAmountAgg.length > 0 && totalAmountAgg[0].completedAmount != null
-            ? Number(totalAmountAgg[0].completedAmount.toString())
-            : 0;
+            ? Big(totalAmountAgg[0].completedAmount.toString()).toFixed(2)
+            : "0.00";
 
         const pendingAmount =
           totalAmountAgg.length > 0 && totalAmountAgg[0].pendingAmount != null
-            ? Number(totalAmountAgg[0].pendingAmount.toString())
-            : 0;
+            ? Big(totalAmountAgg[0].pendingAmount.toString()).toFixed(2)
+            : "0.00";
 
         const totalAmount =
           statusQuery === "pending"
             ? pendingAmount
             : completedAmount;
 
+        // Enriquecer ventas pendientes con el saldo restante real descontando abonos
+        const pendingSaleIds = sales
+          .filter((s: any) => s.status === "pending")
+          .map((s: any) => s._id);
+
+        let paymentsMap = new Map<string, string>();
+        if (pendingSaleIds.length > 0) {
+          const paymentsAgg = await CustomerPayment.aggregate([
+            { $match: { sale_id: { $in: pendingSaleIds } } },
+            { $group: { _id: "$sale_id", totalPaid: { $sum: "$amount_applied_usd" } } },
+          ]);
+          paymentsMap = new Map(
+            paymentsAgg.map((p) => [
+              p._id.toString(),
+              p.totalPaid ? p.totalPaid.toString() : "0",
+            ]),
+          );
+        }
+
+        const enrichedSales = sales.map((sale: any) => {
+          if (sale.status === "pending") {
+            const totalPaidStr = paymentsMap.get(sale._id.toString()) ?? "0";
+            const saleTotal = Big(
+              sale.total_amount ? sale.total_amount.toString() : "0",
+            );
+            const totalPaid = Big(totalPaidStr);
+            const remaining = saleTotal.minus(totalPaid);
+            return {
+              ...sale,
+              paid_amount: totalPaid.toFixed(2),
+              remaining_balance: remaining.lte(0) ? "0.00" : remaining.toFixed(2),
+            };
+          }
+          return sale;
+        });
+
         return {
-          sales,
+          sales: enrichedSales,
           total,
           totalAmount,
           completedAmount,
