@@ -55,6 +55,13 @@ export class InvalidSaleStatusError extends AppError {
   }
 }
 
+export class SaleNotCreditError extends AppError {
+  constructor() {
+    super(400, 'No se pueden registrar abonos en una venta que no es a crédito.');
+    this.name = 'SaleNotCreditError';
+  }
+}
+
 export class SaleMissingCustomerError extends AppError {
   constructor(message = 'La venta no tiene un cliente asociado.') {
     super(400, message);

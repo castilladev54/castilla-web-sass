@@ -18,6 +18,7 @@ import { ExchangeRate } from '../models/ExchangeRate.js';
 import {
   registerCustomerPayment,
   SaleNotFoundError,
+  SaleNotCreditError,
   InvalidSaleStatusError,
   SaleMissingCustomerError,
   OverpaymentError,
@@ -167,6 +168,7 @@ const createSale = async (
     total_amount: '100.00',
     payment_method: 'Efectivo',
     status: 'pending',
+    is_credit_sale: true,
     ...overrides,
   });
 };
@@ -451,6 +453,40 @@ describe('CustomerPayment Service — Pruebas del Servicio', () => {
 
     const paymentsCount = await CustomerPayment.countDocuments();
     expect(paymentsCount).toBe(0);
+  });
+
+  it('Venta que no es a crédito: Se rechaza con SaleNotCreditError y no se crea ningún pago', async () => {
+    const ctx = await createTestContext();
+    const nonCreditSale = await createSale(ctx, {
+      total_amount: '100.00',
+      status: 'pending',
+      is_credit_sale: false,
+    });
+
+    await expect(
+      registerCustomerPayment({
+        saleId: nonCreditSale._id.toString(),
+        businessOwnerId: ctx.businessOwnerId,
+        actorId: ctx.actorId,
+        shiftId: ctx.shiftId,
+        amountReceived: '10.00',
+        currency: 'USD',
+        paymentMethod: 'Efectivo',
+        exchangeRateType: 'NO_APLICA',
+        idempotencyKey: `idem-noncredit-${Date.now()}`,
+      })
+    ).rejects.toThrow(SaleNotCreditError);
+
+    // No se crea ningún CustomerPayment
+    const paymentsCount = await CustomerPayment.countDocuments({ sale_id: nonCreditSale._id });
+    expect(paymentsCount).toBe(0);
+
+    // La venta conserva su estado original
+    const saleInDb = await Sale.findById(nonCreditSale._id);
+    expect(saleInDb).not.toBeNull();
+    expect(saleInDb!.status).toBe('pending');
+    expect(saleInDb!.is_credit_sale).toBe(false);
+    expect(saleInDb!.total_amount.toString()).toBe('100');
   });
 
   // ─── 7. Pago en VES ───────────────────────────────────────────────────────

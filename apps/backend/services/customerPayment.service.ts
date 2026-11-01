@@ -8,6 +8,7 @@ import { withTransactionRetry } from '../utils/transaction-retry.js';
 import {
   AppError,
   SaleNotFoundError,
+  SaleNotCreditError,
   InvalidSaleStatusError,
   SaleMissingCustomerError,
   OverpaymentError,
@@ -33,6 +34,7 @@ function getStartOfDayVE(dateInput: Date = new Date()): Date {
 
 export {
   SaleNotFoundError,
+  SaleNotCreditError,
   InvalidSaleStatusError,
   SaleMissingCustomerError,
   OverpaymentError,
@@ -371,6 +373,10 @@ export const registerCustomerPayment = async (
 
     if (!sale) {
       throw new SaleNotFoundError();
+    }
+
+    if (sale.is_credit_sale !== true) {
+      throw new SaleNotCreditError();
     }
 
     // 3. Confirmar que la venta tenga un cliente
