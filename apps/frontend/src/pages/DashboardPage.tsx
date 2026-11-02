@@ -71,7 +71,7 @@ const DashboardPage = () => {
           </PermissionGuard>
         )}
         {activeTab === 'customers' && (
-          (user?.role === 'admin' || user?.role === 'TENANT_OWNER')
+          (user?.role === 'admin' || user?.role === 'TENANT_OWNER' || user?.role === 'employee')
             ? <CustomerManager />
             : <AccessDenied />
         )}

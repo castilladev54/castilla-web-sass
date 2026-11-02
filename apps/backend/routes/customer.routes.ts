@@ -25,7 +25,7 @@ router.get(
 // Modificación administrativa.
 router.patch(
   '/:id',
-  requireRole(['TENANT_OWNER', 'admin']),
+  requireRole(['TENANT_OWNER', 'admin', 'employee']),
   customerController.updateCustomer
 );
 

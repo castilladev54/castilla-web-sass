@@ -25,6 +25,7 @@ import {
   type Customer,
   type CustomerPayload,
 } from '../../hooks/queries/useCustomerQueries';
+import { useAuthStore } from '../../store/authStore';
 
 const PAGE_SIZE = 10;
 
@@ -78,6 +79,9 @@ export default function CustomerManager() {
   const customers = customersQuery.data?.customers ?? [];
   const total = customersQuery.data?.total ?? 0;
   const totalPages = customersQuery.data?.totalPages ?? 1;
+
+  const { user } = useAuthStore();
+  const canDelete = user?.role === 'admin' || user?.role === 'TENANT_OWNER';
 
   const isSaving = createCustomer.isPending || updateCustomer.isPending;
 
@@ -280,7 +284,7 @@ export default function CustomerManager() {
         data={customers}
         isLoading={customersQuery.isLoading}
         onEdit={openEditModal}
-        onDelete={setCustomerToDeactivate}
+        onDelete={canDelete ? setCustomerToDeactivate : undefined}
         getRowKey={(customer) => customer._id}
         currentPage={page}
         totalPages={totalPages}

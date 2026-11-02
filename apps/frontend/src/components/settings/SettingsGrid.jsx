@@ -11,15 +11,15 @@ const SettingsGrid = () => {
   };
 
   return (
-    <div className="p-6 md:p-8 animate-fade-in text-white max-w-7xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-orange-400 to-orange-600">
+    <section className="p-6 md:p-8 animate-fade-in text-white max-w-7xl mx-auto" aria-labelledby="settings-heading">
+      <header className="mb-8">
+        <h1 id="settings-heading" className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-orange-400 to-orange-600">
           Centro de Configuración
         </h1>
         <p className="text-gray-400 mt-2">
           Administra los diferentes módulos y configuraciones de tu negocio.
         </p>
-      </div>
+      </header>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
 
@@ -51,18 +51,32 @@ const SettingsGrid = () => {
           </p>
         </button>
 
-        {/* Crear Cliente / Clientes (Solo Admin) */}
-        {(user?.role === 'admin') && (
+        {/* Clientes (Accesible para Dueño, Admin y Empleados) */}
+        <button
+          onClick={() => handleNavigation('customers')}
+          className="group flex flex-col p-6 rounded-2xl bg-black/40 border border-white/5 hover:border-blue-500/30 hover:bg-white/5 transition-all duration-300 text-left items-start"
+        >
+          <div className="p-4 rounded-xl bg-blue-500/10 text-blue-400 mb-4 group-hover:scale-110 transition-transform duration-300">
+            <Users size={32} />
+          </div>
+          <h3 className="text-lg font-semibold text-white mb-2">Clientes</h3>
+          <p className="text-sm text-gray-400 leading-relaxed">
+            Registra nuevos clientes y administra tu cartera para el sistema de ventas.
+          </p>
+        </button>
+
+        {/* Cuentas SaaS (Solo Super Admin) */}
+        {user?.role === 'admin' && (
           <button
             onClick={() => handleNavigation('adminCreateUser')}
-            className="group flex flex-col p-6 rounded-2xl bg-black/40 border border-white/5 hover:border-blue-500/30 hover:bg-white/5 transition-all duration-300 text-left items-start"
+            className="group flex flex-col p-6 rounded-2xl bg-black/40 border border-white/5 hover:border-indigo-500/30 hover:bg-white/5 transition-all duration-300 text-left items-start"
           >
-            <div className="p-4 rounded-xl bg-blue-500/10 text-blue-400 mb-4 group-hover:scale-110 transition-transform duration-300">
-              <Users size={32} />
+            <div className="p-4 rounded-xl bg-indigo-500/10 text-indigo-400 mb-4 group-hover:scale-110 transition-transform duration-300">
+              <UserCheck size={32} />
             </div>
-            <h3 className="text-lg font-semibold text-white mb-2">Clientes</h3>
+            <h3 className="text-lg font-semibold text-white mb-2">Cuentas SaaS</h3>
             <p className="text-sm text-gray-400 leading-relaxed">
-              Registra nuevos clientes y administra tu cartera para el sistema de ventas.
+              Crea usuarios con suscripción y administra cuentas del sistema.
             </p>
           </button>
         )}
@@ -97,24 +111,8 @@ const SettingsGrid = () => {
           </button>
         )}
 
-        {/* Usuario (Admin/TENANT_OWNER) */}
-        {(user?.role === 'admin' || user?.role === 'TENANT_OWNER') && (
-          <button
-            className="group flex flex-col p-6 rounded-2xl bg-black/40 border border-white/5 hover:border-pink-500/30 hover:bg-white/5 transition-all duration-300 text-left items-start"
-            onClick={() => handleNavigation('customers')}
-          >
-            <div className="p-4 rounded-xl bg-pink-500/10 text-pink-400 mb-4 group-hover:scale-110 transition-transform duration-300">
-              <UserCheck size={32} />
-            </div>
-            <h3 className="text-lg font-semibold text-white mb-2">Usuarios</h3>
-            <p className="text-sm text-gray-400 leading-relaxed">
-              Añade, edita y gestiona las distintas cuentas de los usuarios registrados.
-            </p>
-          </button>
-        )}
-
       </div>
-    </div>
+    </section>
   );
 };
 
