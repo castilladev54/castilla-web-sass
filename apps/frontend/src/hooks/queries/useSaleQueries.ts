@@ -65,8 +65,13 @@ export interface SaleQueryFilters {
   is_credit_sale?: boolean;
 }
 
+type SaleListItem = Sale & {
+  paid_amount?: string;
+  remaining_balance?: string;
+};
+
 interface SaleListResponse {
-  sales: Sale[];
+  sales: SaleListItem[];
   total: number;
   totalPages: number;
   currentPage: number;

@@ -465,21 +465,21 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
             ? pendingAmount
             : completedAmount;
 
-        // Enriquecer ventas pendientes con el saldo restante real.
+        // Enriquecer todas las ventas a crédito con sus abonos acumulados.
         const typedSales = sales as SaleLeanForReceivables[];
 
-        const pendingSaleIds = typedSales
-          .filter((sale) => sale.status === "pending")
+        const creditSaleIds = typedSales
+          .filter((sale) => sale.is_credit_sale === true)
           .map((sale) => sale._id);
 
         const paymentsMap = new Map<string, string>();
 
-        if (pendingSaleIds.length > 0) {
+        if (creditSaleIds.length > 0) {
           const paymentsAgg =
             await CustomerPayment.aggregate<PaymentAggregateResult>([
               {
                 $match: {
-                  sale_id: { $in: pendingSaleIds },
+                  sale_id: { $in: creditSaleIds },
                   business_owner_id: new Types.ObjectId(String(ownerId)),
                 },
               },
@@ -500,7 +500,7 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
         }
 
         const enrichedSales = typedSales.map((sale) => {
-          if (sale.status !== "pending") return sale;
+          if (sale.is_credit_sale !== true) return sale;
 
           const totalPaid = Big(
             paymentsMap.get(sale._id.toString()) ?? "0",
