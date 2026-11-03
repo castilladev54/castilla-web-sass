@@ -10,13 +10,13 @@ export type DashboardTab =
   | 'purchases'
   | 'sales'
   | 'sales_history'
+  | 'receivables'
   | 'analytics'
   | 'staff'
   | 'customers'
   | 'transfers'
   | 'adjustments'
   | 'settings'
-  | 'plans'
   | 'branches'
   | 'adminCreateUser';
 

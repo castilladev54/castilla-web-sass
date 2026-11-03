@@ -51,6 +51,25 @@ export interface UpdateSalePayload {
   items?: SaleItemPayload[];
 }
 
+export interface RegisterCustomerPaymentPayload {
+  saleId: SaleId;
+  amountReceived: string;
+  currency: 'USD' | 'VES';
+  paymentMethod: PaymentMethod;
+  exchangeRate?: string;
+  exchangeRateType?: 'COMERCIAL' | 'NO_APLICA';
+  idempotencyKey: string;
+}
+
+export interface RegisterCustomerPaymentResponse {
+  success: boolean;
+  message: string;
+  payment: unknown;
+  sale: Sale;
+  remainingBalance: string;
+  isDuplicate: boolean;
+}
+
 export interface SaleQueryFilters {
   page: number;
   limit: number;
@@ -205,3 +224,44 @@ export function useUpdateSale() {
   });
 }
 
+
+
+export function useRegisterCustomerPayment() {
+  const qc = useQueryClient();
+  const activeBranchId = useAuthStore((s) => s.activeBranchId);
+
+  return useMutation<
+    RegisterCustomerPaymentResponse,
+    Error,
+    RegisterCustomerPaymentPayload
+  >({
+    mutationFn: async ({
+      saleId,
+      idempotencyKey,
+      ...payload
+    }) => {
+      if (!activeBranchId) {
+        throw new Error('No hay una sucursal activa seleccionada.');
+      }
+
+      const res = await API.post(
+        `/sales/${saleId}/payments`,
+        payload,
+        {
+          headers: {
+            'x-branch-id': activeBranchId,
+            'x-idempotency-key': idempotencyKey,
+          },
+        },
+      );
+
+      return res.data as RegisterCustomerPaymentResponse;
+    },
+
+    onSuccess: () => {
+      qc.invalidateQueries({
+        queryKey: saleKeys.all(activeBranchId),
+      });
+    },
+  });
+}

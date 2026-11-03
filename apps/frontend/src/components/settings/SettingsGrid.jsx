@@ -1,6 +1,7 @@
-import { ShoppingBag, UserPlus, Users, Archive, Store, User, UserCheck } from 'lucide-react';
+import { ShoppingBag, UserPlus, Users, Archive, Store, User, UserCheck, CreditCard } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useUiStore } from '../../store/uiStore';
+import PermissionGuard from '../PermissionGuard';
 
 const SettingsGrid = () => {
   const { user } = useAuthStore();
@@ -64,6 +65,23 @@ const SettingsGrid = () => {
             Registra nuevos clientes y administra tu cartera para el sistema de ventas.
           </p>
         </button>
+
+        {/* Cuentas por Cobrar */}
+        <PermissionGuard requiredPermission="pos_access">
+          <button
+            type="button"
+            onClick={() => handleNavigation('receivables')}
+            className="group flex flex-col p-6 rounded-2xl bg-black/40 border border-white/5 hover:border-amber-500/30 hover:bg-white/5 transition-all duration-300 text-left items-start w-full"
+          >
+            <div className="p-4 rounded-xl bg-amber-500/10 text-amber-400 mb-4 group-hover:scale-110 transition-transform duration-300">
+              <CreditCard size={32} />
+            </div>
+            <h3 className="text-lg font-semibold text-white mb-2">Cuentas por Cobrar</h3>
+            <p className="text-sm text-gray-400 leading-relaxed">
+              Consulta ventas a crédito, seguimiento de saldos pendientes y gestión de abonos.
+            </p>
+          </button>
+        </PermissionGuard>
 
         {/* Cuentas SaaS (Solo Super Admin) */}
         {user?.role === 'admin' && (
