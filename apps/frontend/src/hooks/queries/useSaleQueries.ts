@@ -62,6 +62,7 @@ export interface SaleQueryFilters {
   status?: string;
   branchId?: string;
   global?: boolean;
+  is_credit_sale?: boolean;
 }
 
 interface SaleListResponse {
@@ -89,6 +90,9 @@ export function useSalesQuery(filters: SaleQueryFilters) {
   if (filters.paymentMethod && filters.paymentMethod !== 'all') params.set('paymentMethod', filters.paymentMethod);
   if (filters.status && filters.status !== 'all') params.set('status', filters.status);
   if (filters.branchId) params.set('branchId', filters.branchId);
+  if (filters.is_credit_sale !== undefined) {
+    params.set("is_credit_sale", String(filters.is_credit_sale));
+  }
 
   return useQuery<SaleListResponse>({
     queryKey: saleKeys.list(activeBranchId, filters),

@@ -21,6 +21,22 @@ import {
 import { BranchId, CustomerId } from "../types/brands.js";
 import { withTransactionRetry } from "../utils/transaction-retry.js";
 
+type DecimalLike = {
+  toString(): string;
+} | string | number;
+
+interface SaleLeanForReceivables {
+  _id: Types.ObjectId;
+  status: "pending" | "completed" | "cancelled";
+  is_credit_sale: boolean;
+  total_amount: DecimalLike;
+}
+
+interface PaymentAggregateResult {
+  _id: Types.ObjectId;
+  totalPaid: Types.Decimal128;
+}
+
 // Venezuela = UTC-4. El backend corre en UTC (Vercel).
 // Sin esta corrección, setHours(0,0,0,0) pondría la medianoche en UTC,
 // causando un desfase de 4h → "Ayer" mostraría ventas del día equivocado.
@@ -198,6 +214,7 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
       ? null
       : (req.query.paymentMethod as string) || null;
     const statusQuery = (req.query.status as string) || null;
+    const isCreditSaleQuery = req.query.is_credit_sale as string | undefined;
 
     // --- Resolver filtro de fechas ---
     let dateFrom = req.query.dateFrom as string | null;
@@ -275,11 +292,16 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
     const branchSegment = branchIdFilter ? `:br${branchIdFilter}` : "";
     const statusSegment =
       statusQuery && statusQuery !== "all" ? `:st${statusQuery}` : "";
+    const creditSaleSegment =
+      isCreditSaleQuery === "true" || isCreditSaleQuery === "false"
+        ? `:credit${isCreditSaleQuery}`
+        : "";
     const cacheKey =
       buildPaginatedKey("sales", version, page, limit, cacheScope) +
       (sellerId ? `:s${sellerId}` : "") +
       (paymentMethod && paymentMethod !== "all" ? `:pm${paymentMethod}` : "") +
       statusSegment +
+      creditSaleSegment +
       dateSegment +
       branchSegment;
 
@@ -321,6 +343,12 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
           } else {
             filter.status = statusQuery;
           }
+        }
+
+        if (isCreditSaleQuery === "true") {
+          filter.is_credit_sale = true;
+        } else if (isCreditSaleQuery === "false") {
+          filter.is_credit_sale = false;
         }
 
         // Para el aggregation pipeline es estrictamente necesario que los IDs sean ObjectId
@@ -437,40 +465,57 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
             ? pendingAmount
             : completedAmount;
 
-        // Enriquecer ventas pendientes con el saldo restante real descontando abonos
-        const pendingSaleIds = sales
-          .filter((s: any) => s.status === "pending")
-          .map((s: any) => s._id);
+        // Enriquecer ventas pendientes con el saldo restante real.
+        const typedSales = sales as SaleLeanForReceivables[];
 
-        let paymentsMap = new Map<string, string>();
+        const pendingSaleIds = typedSales
+          .filter((sale) => sale.status === "pending")
+          .map((sale) => sale._id);
+
+        const paymentsMap = new Map<string, string>();
+
         if (pendingSaleIds.length > 0) {
-          const paymentsAgg = await CustomerPayment.aggregate([
-            { $match: { sale_id: { $in: pendingSaleIds } } },
-            { $group: { _id: "$sale_id", totalPaid: { $sum: "$amount_applied_usd" } } },
-          ]);
-          paymentsMap = new Map(
-            paymentsAgg.map((p) => [
-              p._id.toString(),
-              p.totalPaid ? p.totalPaid.toString() : "0",
-            ]),
-          );
+          const paymentsAgg =
+            await CustomerPayment.aggregate<PaymentAggregateResult>([
+              {
+                $match: {
+                  sale_id: { $in: pendingSaleIds },
+                  business_owner_id: new Types.ObjectId(String(ownerId)),
+                },
+              },
+              {
+                $group: {
+                  _id: "$sale_id",
+                  totalPaid: { $sum: "$amount_applied_usd" },
+                },
+              },
+            ]);
+
+          for (const payment of paymentsAgg) {
+            paymentsMap.set(
+              payment._id.toString(),
+              payment.totalPaid.toString(),
+            );
+          }
         }
 
-        const enrichedSales = sales.map((sale: any) => {
-          if (sale.status === "pending") {
-            const totalPaidStr = paymentsMap.get(sale._id.toString()) ?? "0";
-            const saleTotal = Big(
-              sale.total_amount ? sale.total_amount.toString() : "0",
-            );
-            const totalPaid = Big(totalPaidStr);
-            const remaining = saleTotal.minus(totalPaid);
-            return {
-              ...sale,
-              paid_amount: totalPaid.toFixed(2),
-              remaining_balance: remaining.lte(0) ? "0.00" : remaining.toFixed(2),
-            };
-          }
-          return sale;
+        const enrichedSales = typedSales.map((sale) => {
+          if (sale.status !== "pending") return sale;
+
+          const totalPaid = Big(
+            paymentsMap.get(sale._id.toString()) ?? "0",
+          );
+
+          const saleTotal = Big(sale.total_amount.toString());
+          const remaining = saleTotal.minus(totalPaid);
+
+          return {
+            ...sale,
+            paid_amount: totalPaid.toFixed(2),
+            remaining_balance: remaining.lte(0)
+              ? "0.00"
+              : remaining.toFixed(2),
+          };
         });
 
         return {
