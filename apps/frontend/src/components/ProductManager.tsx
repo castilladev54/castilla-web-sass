@@ -1,5 +1,5 @@
 import { useEffect, useState, ChangeEvent, FormEvent } from 'react';
-import { Plus, PackageOpen, Camera, ScanBarcode, Tag as TagIcon } from 'lucide-react';
+import { Plus, PackageOpen, Camera, ScanBarcode, Tag as TagIcon, Printer } from 'lucide-react';
 import {
   useProductsQuery,
   useCreateProduct,
@@ -25,6 +25,7 @@ import BarcodeScanner from './BarcodeScanner';
 import ProductSearchBar from './molecules/ProductSearchBar';
 import { RateGuard } from './pos/RateGuard';
 import { RequireBranchGuard } from './guards/RequireBranchGuard';
+import ProductListPrintModal from './ProductListPrintModal';
 
 const ITEMS_PER_PAGE = 20;
 
@@ -173,6 +174,7 @@ const ProductManagerInner = () => {
   const deleteMutation = useDeleteProduct();
 
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<ProductId | null>(null);
   const [formData, setFormData] = useState<ProductFormData>(EMPTY_FORM);
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
@@ -288,8 +290,28 @@ const ProductManagerInner = () => {
       <SectionHeader
         id="products-heading"
         title={<>Gestión de <span className="text-orange-500">Productos</span></>}
-        onAdd={() => setIsFormOpen(true)}
-        addLabel={<><Plus size={18} /> Nuevo Producto</>}
+        actions={
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsPrintModalOpen(true)}
+              className="flex items-center gap-2 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10 font-semibold w-full sm:w-auto"
+            >
+              <Printer size={18} />
+              <span>Imprimir Lista</span>
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => setIsFormOpen(true)}
+              className="flex items-center gap-2 w-full sm:w-auto"
+            >
+              <Plus size={18} />
+              <span>Nuevo Producto</span>
+            </Button>
+          </div>
+        }
       />
 
       {error && !isFormOpen && (
@@ -487,6 +509,15 @@ const ProductManagerInner = () => {
             setSearchTerm(code);
           }
         }}
+      />
+
+      {/* Modal de Impresión de Lista de Productos */}
+      <ProductListPrintModal
+        isOpen={isPrintModalOpen}
+        onClose={() => setIsPrintModalOpen(false)}
+        searchTerm={debouncedSearch}
+        showDebtOnly={showDebtOnly}
+        exchangeRate={exchangeRate}
       />
     </section>
   );

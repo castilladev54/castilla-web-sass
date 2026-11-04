@@ -101,6 +101,27 @@ export function useAllProductsForPOS() {
 }
 
 /**
+ * Catálogo completo de productos para reporte/impresión.
+ * Obtiene hasta 5000 productos aplicando el filtro de búsqueda y deuda opcionales.
+ */
+export function usePrintProductsQuery(search: string = '', hasDebt: boolean = false, enabled: boolean = true) {
+  const activeBranchId = useAuthStore((s) => s.activeBranchId);
+  const params = new URLSearchParams({ page: '1', limit: '5000' });
+  if (search.trim()) params.set('search', search.trim());
+  if (hasDebt) params.set('hasDebt', 'true');
+
+  return useQuery<Product[]>({
+    queryKey: [...productKeys.all(activeBranchId), 'print-list', { search: search.trim(), hasDebt }] as const,
+    queryFn: async ({ signal }) => {
+      const res = await API.get<ApiProductListResponse>(`/products?${params.toString()}`, { signal });
+      return res.data.products;
+    },
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+/**
  * Busca un producto por su código de barras.
  * Se dispara de forma imperativa (enabled: false) desde mutateAsync.
  */
@@ -187,4 +208,3 @@ export function useTransferProductsQuery(sourceBranchId: BranchId | null) {
     gcTime: 10 * 60_000,
   });
 }
-
