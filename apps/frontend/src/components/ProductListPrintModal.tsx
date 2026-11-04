@@ -37,7 +37,7 @@ export default function ProductListPrintModal({
     isError,
   } = usePrintProductsQuery(searchTerm, showDebtOnly, isOpen);
 
-  const branchName = activeBranch?.name || user?.businessName || user?.name || 'Inventario Principal';
+  const branchName = activeBranch?.name || user?.name || 'Inventario Principal';
   const branchAddress = activeBranch?.address || '';
   const now = new Date();
   const formattedDate = now.toLocaleDateString('es-VE', {

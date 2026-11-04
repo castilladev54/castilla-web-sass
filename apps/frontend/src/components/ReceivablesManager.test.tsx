@@ -25,7 +25,7 @@ import { useExchangeRateQuery } from '../hooks/queries/useExchangeRateQueries';
 
 // Polyfill crypto.randomUUID for JSDOM environments where it may be missing
 if (typeof crypto === 'undefined' || !(crypto as any).randomUUID) {
-  (global as any).crypto = { randomUUID: () => 'test-idempotency-key' };
+  (globalThis as any).crypto = { randomUUID: () => 'test-idempotency-key' };
 }
 
 vi.mock('../hooks/queries/useSaleQueries', () => ({
@@ -79,7 +79,7 @@ function configureSalesQuery(
     isFetching: false,
     refetch: mockRefetch,
     ...overrides,
-  } as ReturnType<typeof useSalesQuery>);
+  } as unknown as ReturnType<typeof useSalesQuery>);
 }
 
 afterEach(() => {
@@ -242,7 +242,7 @@ describe('ReceivablesManager', () => {
       expect(mockMutateAsync).toHaveBeenCalledTimes(1);
     });
 
-    const payload = mockMutateAsync.mock.calls[0][0];
+    const payload = mockMutateAsync.mock.calls[0]?.[0];
 
     expect(payload).toEqual({
       saleId: sale._id,
