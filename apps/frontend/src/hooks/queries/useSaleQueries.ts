@@ -51,13 +51,22 @@ export interface UpdateSalePayload {
   items?: SaleItemPayload[];
 }
 
+export type CustomerPaymentMethod =
+  | 'Efectivo'
+  | 'Divisas'
+  | 'Tarjeta'
+  | 'Pago Movil'
+  | 'Transferencia'
+  | 'Zelle'
+  | 'BIOPAGO';
+
 export interface RegisterCustomerPaymentPayload {
   saleId: SaleId;
   amountReceived: string;
   currency: 'USD' | 'VES';
-  paymentMethod: PaymentMethod;
+  paymentMethod: CustomerPaymentMethod;
   exchangeRate?: string;
-  exchangeRateType?: 'COMERCIAL' | 'NO_APLICA';
+  exchangeRateType: 'COMERCIAL' | 'NO_APLICA';
   idempotencyKey: string;
 }
 

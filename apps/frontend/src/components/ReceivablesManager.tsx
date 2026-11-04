@@ -1,15 +1,36 @@
-import { useState } from 'react';
-import { CreditCard, Wallet } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { isAxiosError } from 'axios';
+import { CreditCard, Wallet, X, Loader2 } from 'lucide-react';
 
 import DataTable, {
   type DataTableColumn,
 } from './organisms/DataTable';
+import Modal from './molecules/Modal';
 
-import { useSalesQuery } from '../hooks/queries/useSaleQueries';
+import {
+  useSalesQuery,
+  useRegisterCustomerPayment,
+  type CustomerPaymentMethod,
+} from '../hooks/queries/useSaleQueries';
+import { useExchangeRateQuery } from '../hooks/queries/useExchangeRateQueries';
 
 const PAGE_SIZE = 10;
 
 type ReceivableTab = 'pending' | 'completed';
+
+type ReceivableSale = NonNullable<
+  ReturnType<typeof useSalesQuery>['data']
+>['sales'][number];
+
+const PAYMENT_METHODS: CustomerPaymentMethod[] = [
+  'Efectivo',
+  'Divisas',
+  'Tarjeta',
+  'Pago Movil',
+  'Transferencia',
+  'Zelle',
+  'BIOPAGO',
+];
 
 function formatUSD(value: string | undefined): string {
   const amount = Number(value ?? '0');
@@ -34,9 +55,35 @@ function getCustomerName(
   return customer.name || 'Cliente sin nombre';
 }
 
+function getPaymentError(error: unknown): string {
+  if (isAxiosError<{ message?: string }>(error)) {
+    return (
+      error.response?.data?.message ??
+      'No se pudo registrar el abono. Intenta nuevamente.'
+    );
+  }
+
+  return error instanceof Error
+    ? error.message
+    : 'Ocurrió un error inesperado.';
+}
+
 export default function ReceivablesManager() {
   const [activeTab, setActiveTab] = useState<ReceivableTab>('pending');
   const [page, setPage] = useState(1);
+  const [selectedSale, setSelectedSale] =
+    useState<ReceivableSale | null>(null);
+
+  const [amountReceived, setAmountReceived] = useState('');
+  const [currency, setCurrency] = useState<'USD' | 'VES'>('USD');
+  const [paymentMethod, setPaymentMethod] =
+    useState<CustomerPaymentMethod>('Efectivo');
+  const [paymentError, setPaymentError] = useState('');
+
+  const idempotencyKeyRef = useRef<{
+    fingerprint: string;
+    key: string;
+  } | null>(null);
 
   const salesQuery = useSalesQuery({
     page,
@@ -45,16 +92,126 @@ export default function ReceivablesManager() {
     is_credit_sale: true,
   });
 
+  const paymentMutation = useRegisterCustomerPayment();
+  const exchangeRateQuery = useExchangeRateQuery();
+
   const sales = salesQuery.data?.sales ?? [];
   const total = salesQuery.data?.total ?? 0;
   const totalPages = salesQuery.data?.totalPages ?? 1;
 
+  const isPaymentPending = paymentMutation.isPending;
+
   const handleTabChange = (tab: ReceivableTab) => {
     setActiveTab(tab);
     setPage(1);
+    setSelectedSale(null);
+    setPaymentError('');
   };
 
-  const columns: DataTableColumn<(typeof sales)[number]>[] = [
+  const openPaymentModal = (sale: ReceivableSale) => {
+    setSelectedSale(sale);
+    setAmountReceived('');
+    setCurrency('USD');
+    setPaymentMethod('Efectivo');
+    setPaymentError('');
+  };
+
+  const closePaymentModal = () => {
+    if (isPaymentPending) return;
+
+    setSelectedSale(null);
+    setAmountReceived('');
+    setPaymentError('');
+  };
+
+  const handleRegisterPayment = async (
+    event: React.FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault();
+
+    if (!selectedSale) return;
+
+    // Validación de formato. El backend sigue siendo responsable
+    // de validar el importe, el saldo y las reglas financieras.
+    const normalizedAmount = amountReceived.trim();
+
+    if (
+      !/^\d+(\.\d{1,2})?$/.test(normalizedAmount) ||
+      !/[1-9]/.test(normalizedAmount)
+    ) {
+      setPaymentError(
+        'Ingresa un importe mayor que cero con máximo dos decimales.',
+      );
+      return;
+    }
+
+    setPaymentError('');
+
+    try {
+      let exchangeRate: string | undefined;
+      const exchangeRateType =
+        currency === 'VES' ? 'COMERCIAL' : 'NO_APLICA';
+
+      if (currency === 'VES') {
+        const rateResult = await exchangeRateQuery.refetch();
+
+        if (rateResult.error) {
+          throw rateResult.error;
+        }
+
+        if (
+          !rateResult.data ||
+          !rateResult.data.is_manual_override
+        ) {
+          throw new Error(
+            'No existe una tasa comercial vigente. Actualiza la tasa antes de registrar el abono.',
+          );
+        }
+
+        exchangeRate = rateResult.data.rate;
+      }
+
+      // La misma combinación de datos conserva la misma clave
+      // cuando el usuario reintenta una solicitud fallida.
+      const fingerprint = [
+        selectedSale._id,
+        normalizedAmount,
+        currency,
+        paymentMethod,
+        exchangeRate ?? '',
+      ].join('|');
+
+      if (
+        !idempotencyKeyRef.current ||
+        idempotencyKeyRef.current.fingerprint !== fingerprint
+      ) {
+        idempotencyKeyRef.current = {
+          fingerprint,
+          key: crypto.randomUUID(),
+        };
+      }
+
+      await paymentMutation.mutateAsync({
+        saleId: selectedSale._id,
+        amountReceived: normalizedAmount,
+        currency,
+        paymentMethod,
+        exchangeRate,
+        exchangeRateType,
+        idempotencyKey: idempotencyKeyRef.current.key,
+      });
+
+      // Solo se elimina la clave después de confirmar el éxito.
+      idempotencyKeyRef.current = null;
+      setSelectedSale(null);
+      setAmountReceived('');
+      setPaymentError('');
+    } catch (error: unknown) {
+      setPaymentError(getPaymentError(error));
+    }
+  };
+
+  const columns: DataTableColumn<ReceivableSale>[] = [
     {
       key: 'customer_id',
       label: 'Cliente',
@@ -94,6 +251,21 @@ export default function ReceivablesManager() {
           {formatUSD(sale.remaining_balance)}
         </span>
       ),
+    },
+    {
+      key: '__display_actions',
+      label: 'Acciones',
+      display: true,
+      render: (_value, sale) =>
+        activeTab === 'pending' ? (
+          <button
+            type="button"
+            onClick={() => openPaymentModal(sale)}
+            className="px-3 py-2 rounded-lg bg-orange-500/15 text-orange-400 hover:bg-orange-500/25 transition-colors text-sm font-medium"
+          >
+            Registrar abono
+          </button>
+        ) : null,
     },
   ];
 
@@ -162,16 +334,160 @@ export default function ReceivablesManager() {
         data={sales}
         isLoading={salesQuery.isLoading}
         emptyMessage={
-          activeTab === 'pending'
-            ? 'No hay cuentas pendientes.'
-            : 'No hay cuentas saldadas.'
+          salesQuery.isError
+            ? 'No se pudieron cargar las cuentas por cobrar.'
+            : activeTab === 'pending'
+              ? 'No hay cuentas pendientes.'
+              : 'No hay cuentas saldadas.'
         }
-        emptyDetail="Las ventas a crédito aparecerán aquí."
+        emptyDetail={
+          salesQuery.isError
+            ? 'Intenta nuevamente para consultar las cuentas.'
+            : 'Las ventas a crédito aparecerán aquí.'
+        }
         currentPage={page}
         totalPages={totalPages}
         onPageChange={setPage}
         getRowKey={(sale) => sale._id}
       />
+
+      <Modal
+        isOpen={Boolean(selectedSale)}
+        onClose={isPaymentPending ? () => {} : closePaymentModal}
+        title="Registrar abono"
+        icon={<CreditCard className="text-orange-400" size={22} />}
+      >
+        {selectedSale && (
+          <form onSubmit={handleRegisterPayment} className="space-y-5">
+            <div className="rounded-xl bg-white/5 border border-white/10 p-4 space-y-2">
+              <p className="text-sm text-gray-400">Cliente</p>
+              <p className="font-semibold">
+                {getCustomerName(selectedSale.customer_id)}
+              </p>
+
+              <div className="flex justify-between gap-4 pt-2">
+                <span className="text-sm text-gray-400">
+                  Saldo pendiente
+                </span>
+                <span className="font-bold text-amber-400">
+                  {formatUSD(selectedSale.remaining_balance)}
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor="payment-amount"
+                className="block text-sm font-medium text-gray-300 mb-2"
+              >
+                Importe recibido
+              </label>
+              <input
+                id="payment-amount"
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                value={amountReceived}
+                onChange={(event) =>
+                  setAmountReceived(event.target.value)
+                }
+                placeholder="0.00"
+                disabled={isPaymentPending}
+                className="w-full rounded-lg bg-white/5 border border-white/10 px-4 py-3 text-white outline-none focus:border-orange-400 disabled:opacity-50"
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="payment-currency"
+                className="block text-sm font-medium text-gray-300 mb-2"
+              >
+                Moneda recibida
+              </label>
+              <select
+                id="payment-currency"
+                value={currency}
+                onChange={(event) =>
+                  setCurrency(event.target.value as 'USD' | 'VES')
+                }
+                disabled={isPaymentPending}
+                className="w-full rounded-lg bg-[#252532] border border-white/10 px-4 py-3 text-white outline-none focus:border-orange-400"
+              >
+                <option value="USD">Dólares (USD)</option>
+                <option value="VES">Bolívares (VES)</option>
+              </select>
+            </div>
+
+            <div>
+              <label
+                htmlFor="payment-method"
+                className="block text-sm font-medium text-gray-300 mb-2"
+              >
+                Método de pago
+              </label>
+              <select
+                id="payment-method"
+                value={paymentMethod}
+                onChange={(event) =>
+                  setPaymentMethod(
+                    event.target.value as CustomerPaymentMethod,
+                  )
+                }
+                disabled={isPaymentPending}
+                className="w-full rounded-lg bg-[#252532] border border-white/10 px-4 py-3 text-white outline-none focus:border-orange-400"
+              >
+                {PAYMENT_METHODS.map((method) => (
+                  <option key={method} value={method}>
+                    {method}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {currency === 'VES' && (
+              <p className="text-sm text-gray-400">
+                Se utilizará la tasa comercial vigente. La tasa será
+                verificada nuevamente por el servidor al registrar el pago.
+              </p>
+            )}
+
+            {paymentError && (
+              <p
+                role="alert"
+                className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400"
+              >
+                {paymentError}
+              </p>
+            )}
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={closePaymentModal}
+                disabled={isPaymentPending}
+                className="px-4 py-2 rounded-lg border border-white/10 text-gray-300 hover:bg-white/5 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="submit"
+                disabled={isPaymentPending}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500 text-white font-semibold hover:bg-orange-600 disabled:opacity-50"
+              >
+                {isPaymentPending ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Registrando...
+                  </>
+                ) : (
+                  'Confirmar abono'
+                )}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
     </section>
   );
 }
