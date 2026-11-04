@@ -74,7 +74,7 @@ describe('useRegisterCustomerPayment', () => {
       { wrapper },
     );
 
-    await result.current.mutateAsync(payload);
+    const response = await result.current.mutateAsync(payload);
 
     expect(API.post).toHaveBeenCalledWith(
       '/sales/sale-1/payments',
@@ -92,7 +92,7 @@ describe('useRegisterCustomerPayment', () => {
       },
     );
 
-    expect(result.current.data).toEqual(mockResponse.data);
+    expect(response).toEqual(mockResponse.data);
   });
 
   it('rechaza el registro si no existe una sucursal activa', async () => {

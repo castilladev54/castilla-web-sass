@@ -329,22 +329,38 @@ export default function ReceivablesManager() {
         </div>
       </div>
 
+      {salesQuery.isError && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-500/30 bg-red-500/10 p-4"
+        >
+          <p className="text-sm text-red-300">
+            No se pudieron actualizar las cuentas por cobrar.
+            {sales.length > 0 &&
+              ' Se muestran los datos anteriores, que podrían estar desactualizados.'}
+          </p>
+
+          <button
+            type="button"
+            onClick={() => void salesQuery.refetch()}
+            disabled={salesQuery.isFetching}
+            className="rounded-lg border border-red-400/30 px-3 py-2 text-sm font-medium text-red-300 transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {salesQuery.isFetching ? 'Reintentando…' : 'Reintentar'}
+          </button>
+        </div>
+      )}
+
       <DataTable
         columns={columns}
         data={sales}
         isLoading={salesQuery.isLoading}
         emptyMessage={
-          salesQuery.isError
-            ? 'No se pudieron cargar las cuentas por cobrar.'
-            : activeTab === 'pending'
-              ? 'No hay cuentas pendientes.'
-              : 'No hay cuentas saldadas.'
+          activeTab === 'pending'
+            ? 'No hay cuentas pendientes.'
+            : 'No hay cuentas saldadas.'
         }
-        emptyDetail={
-          salesQuery.isError
-            ? 'Intenta nuevamente para consultar las cuentas.'
-            : 'Las ventas a crédito aparecerán aquí.'
-        }
+        emptyDetail="Las ventas a crédito aparecerán aquí."
         currentPage={page}
         totalPages={totalPages}
         onPageChange={setPage}
