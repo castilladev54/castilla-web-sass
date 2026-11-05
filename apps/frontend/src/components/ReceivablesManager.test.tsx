@@ -261,4 +261,44 @@ describe('ReceivablesManager', () => {
     });
   });
 
+  it('rechaza un abono en VES si no existe tasa comercial manual', async () => {
+    const mockRateRefetch = vi.fn().mockResolvedValue({
+      data: {
+        rate: '450.00',
+        is_manual_override: false,
+      },
+      error: null,
+    });
+
+    vi.mocked(useExchangeRateQuery).mockReturnValue({
+      refetch: mockRateRefetch,
+    } as unknown as ReturnType<typeof useExchangeRateQuery>);
+
+    render(<ReceivablesManager />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Registrar abono' }),
+    );
+
+    fireEvent.change(screen.getByLabelText('Importe recibido'), {
+      target: { value: '100.00' },
+    });
+
+    fireEvent.change(screen.getByLabelText('Moneda recibida'), {
+      target: { value: 'VES' },
+    });
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Confirmar abono' }),
+    );
+
+    expect(
+      await screen.findByText(
+        'No existe una tasa comercial vigente. Actualiza la tasa antes de registrar el abono.',
+      ),
+    ).not.toBeNull();
+
+    expect(mockRateRefetch).toHaveBeenCalledTimes(1);
+    expect(mockMutateAsync).not.toHaveBeenCalled();
+  });
 });
