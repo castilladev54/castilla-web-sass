@@ -1,4 +1,4 @@
-import { useEffect, useState, ChangeEvent, FormEvent } from 'react';
+import { useEffect, useState, useMemo, ChangeEvent, FormEvent } from 'react';
 import { Plus, PackageOpen, Camera, ScanBarcode, Tag as TagIcon, Printer } from 'lucide-react';
 import {
   useProductsQuery,
@@ -6,12 +6,13 @@ import {
   useUpdateProduct,
   useDeleteProduct,
   useAllCategoriesQuery,
+  useBranchesQuery,
 } from '../hooks/queries';
 import { useExchangeRateQuery } from '../hooks/queries/useExchangeRateQueries';
 import { toBs } from '../utils/currency';
 import { useAuthStore } from '../store/authStore';
 import toast from 'react-hot-toast';
-import type { Product, ProductId } from '@inventory/shared';
+import type { Product, ProductId, Branch } from '@inventory/shared';
 
 import Button from './atoms/Button';
 import Badge from './atoms/Badge';
@@ -74,9 +75,25 @@ const formatUnit = (stock: number, unit_type?: string) => {
   return stock === 1 ? 'unidad' : 'unidades';
 };
 
-const buildColumns = (
+const formatShortUnit = (unit_type?: string) => {
+  switch (unit_type) {
+    case 'kg':
+      return 'kg';
+    case 'litro':
+      return 'L';
+    case 'metro':
+      return 'm';
+    case 'unidad':
+    default:
+      return 'ud';
+  }
+};
+
+export const buildColumns = (
   toBsFn: (usd: string, rate: string) => string,
   rate: string,
+  branches: Branch[] = [],
+  activeBranchId: string | null = null,
 ) => {
   const column = createDataTableColumn<Product>();
 
@@ -117,6 +134,120 @@ const buildColumns = (
           </p>
         </div>
       ),
+    }),
+
+    column({
+      key: 'branchInventories',
+      label: 'Stock por Sucursal',
+      className: 'min-w-[180px] max-w-[320px]',
+      render: (_val, row) => {
+        const inventories = row.branchInventories ?? [];
+        const invMap = new Map<string, number>();
+        for (const inv of inventories) {
+          invMap.set(String(inv.branch_id), Number(inv.stock));
+        }
+
+        let branchItems: Array<{
+          branchId: string;
+          name: string;
+          stock: number;
+          isActive: boolean;
+        }> = [];
+
+        if (branches.length > 0) {
+          branchItems = branches.map((b) => ({
+            branchId: String(b._id),
+            name: b.name,
+            stock: invMap.get(String(b._id)) ?? 0,
+            isActive: String(b._id) === activeBranchId,
+          }));
+
+          const knownIds = new Set(branches.map((b) => String(b._id)));
+          for (const inv of inventories) {
+            const bId = String(inv.branch_id);
+            if (!knownIds.has(bId)) {
+              branchItems.push({
+                branchId: bId,
+                name: `Sucursal (${bId.slice(-4)})`,
+                stock: Number(inv.stock),
+                isActive: bId === activeBranchId,
+              });
+            }
+          }
+        } else if (inventories.length > 0) {
+          branchItems = inventories.map((inv) => ({
+            branchId: String(inv.branch_id),
+            name: `Sucursal (${String(inv.branch_id).slice(-4)})`,
+            stock: Number(inv.stock),
+            isActive: String(inv.branch_id) === activeBranchId,
+          }));
+        }
+
+        if (branchItems.length === 0) {
+          return (
+            <span className="text-xs text-gray-500 italic">
+              Sin sucursales
+            </span>
+          );
+        }
+
+        return (
+          <ul
+            className="flex flex-wrap gap-1.5 list-none p-0 m-0"
+            aria-label={`Stock de ${row.name} por sucursal`}
+          >
+            {branchItems.map((item) => {
+              const numericStock = item.stock;
+              const formattedStock = new Intl.NumberFormat('es-VE', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 3,
+              }).format(numericStock);
+              const shortUnit = formatShortUnit(row.unit_type);
+
+              let badgeClasses = 'bg-white/5 border-white/10 text-gray-300';
+              let stockColor = 'text-emerald-400 font-semibold';
+
+              if (numericStock < 0) {
+                badgeClasses = 'bg-red-500/10 border-red-500/25 text-red-400';
+                stockColor = 'text-red-400 font-bold';
+              } else if (numericStock === 0) {
+                badgeClasses = 'bg-black/20 border-white/5 text-gray-400';
+                stockColor = 'text-gray-400 font-medium';
+              }
+
+              if (item.isActive) {
+                badgeClasses += ' ring-1 ring-orange-500/40 bg-orange-500/10';
+              }
+
+              return (
+                <li key={item.branchId}>
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs border ${badgeClasses} transition-colors`}
+                    title={`${item.name}: ${formattedStock} ${formatUnit(numericStock, row.unit_type)}${item.isActive ? ' (Sucursal activa actual)' : ''}`}
+                  >
+                    {item.isActive && (
+                      <span
+                        className="w-1.5 h-1.5 rounded-full bg-orange-400 shrink-0"
+                        title="Sucursal activa"
+                        aria-hidden="true"
+                      />
+                    )}
+                    <span className="text-gray-400 font-medium truncate max-w-[110px]">
+                      {item.name}:
+                    </span>
+                    <span className={stockColor}>
+                      {formattedStock}
+                    </span>
+                    <span className="text-[10px] text-gray-400">
+                      {shortUnit}
+                    </span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        );
+      },
     }),
 
     column({
@@ -165,8 +296,14 @@ const ProductManagerInner = () => {
   const { data, isLoading, error } = useProductsQuery(currentPage, ITEMS_PER_PAGE, debouncedSearch, showDebtOnly);
   const { data: categories = [] } = useAllCategoriesQuery();
   const { data: rateData } = useExchangeRateQuery();
+  const { data: branches = [] } = useBranchesQuery();
   const exchangeRate = rateData?.rate ?? "1";
   const activeBranchId = useAuthStore((s) => s.activeBranchId);
+
+  const columns = useMemo(
+    () => buildColumns(toBs, exchangeRate, branches, activeBranchId),
+    [exchangeRate, branches, activeBranchId]
+  );
 
   // Mutations
   const createMutation = useCreateProduct();
@@ -286,7 +423,7 @@ const ProductManagerInner = () => {
   const isWorking = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
 
   return (
-    <section aria-labelledby="products-heading" className="w-full max-w-6xl mx-auto p-4 sm:p-6">
+    <section aria-labelledby="products-heading" className="w-full max-w-7xl mx-auto p-4 sm:p-6">
       <SectionHeader
         id="products-heading"
         title={<>Gestión de <span className="text-orange-500">Productos</span></>}
@@ -472,7 +609,7 @@ const ProductManagerInner = () => {
       </Modal>
 
       <DataTable
-        columns={buildColumns(toBs, exchangeRate)}
+        columns={columns}
         data={products}
         isLoading={isLoading && !isFormOpen}
         onEdit={handleEdit}
