@@ -81,8 +81,13 @@ const SaleDetailView = ({
         </header>
 
         {/* Tarjetas KPI de la venta */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
           {[
+            {
+              label: "Cliente",
+              value: sale.customer_id?.name || "Consumidor Final",
+              cls: "",
+            },
             { label: "Método de Pago", value: sale.payment_method, cls: "" },
             { label: "Fecha", value: new Date(sale.createdAt).toLocaleString('es-VE'), cls: "" },
             { label: "Atendido por", value: sale.sold_by?.name || "Propietario", cls: "" },

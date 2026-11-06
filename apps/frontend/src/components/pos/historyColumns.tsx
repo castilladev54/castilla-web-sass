@@ -29,6 +29,28 @@ export const buildHistoryColumns = (
     },
   },
   {
+    key: 'customer_id',
+    label: 'Cliente',
+    render: (value) => {
+      if (!value) {
+        return <span className="text-gray-400 text-sm">Consumidor Final</span>;
+      }
+      const customer = typeof value === 'object' && value !== null ? value : null;
+      const name = customer?.name ?? (typeof value === 'string' ? value : 'Consumidor Final');
+      const doc = customer?.document_id;
+      return (
+        <div className="text-sm">
+          <span className="font-medium text-white">{name || 'Consumidor Final'}</span>
+          {doc && (
+            <p className="text-[10px] sm:text-xs text-gray-400 font-mono mt-0.5">
+              {doc}
+            </p>
+          )}
+        </div>
+      );
+    },
+  },
+  {
     key: 'sold_by',
     label: 'Vendedor',
     render: (value) => value?.name ?? '—',
