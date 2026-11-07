@@ -14,6 +14,7 @@ export interface StockTransfer extends Document {
   status: TransferStatus;
   createdBy: string;
   businessOwnerId: string;
+  idempotency_key?: string;
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -75,6 +76,12 @@ const StockTransferSchema = new Schema<StockTransfer>(
       index: true,
     },
 
+    idempotency_key: {
+      type: String,
+      trim: true,
+      maxlength: 128,
+    },
+
     notes: {
       type: String,
       required: false,
@@ -90,6 +97,19 @@ StockTransferSchema.index({
   businessOwnerId: 1,
   createdAt: -1,
 });
+
+StockTransferSchema.index(
+  {
+    businessOwnerId: 1,
+    idempotency_key: 1,
+  },
+  {
+    unique: true,
+    partialFilterExpression: {
+      idempotency_key: { $type: 'string' },
+    },
+  },
+);
 
 export const StockTransferModel = mongoose.model<StockTransfer>(
   'StockTransfer',
