@@ -26,8 +26,63 @@ interface TransferParams {
   businessOwnerId: string;
   actorId: string;
   items: TransferItem[];
+  idempotencyKey: string;
   notes?: string;
 }
+
+const isSameTransfer = (
+  existing: {
+    sourceBranchId: string;
+    destinationBranchId: string;
+    items: StockTransferItem[];
+    notes?: string;
+  },
+  input: {
+    sourceBranchId: string;
+    destinationBranchId: string;
+    items: StockTransferItem[];
+    notes?: string;
+  },
+): boolean => {
+  try {
+    const normalizeItems = (transferItems: StockTransferItem[]) =>
+      transferItems
+        .map((item) => ({
+          product_id: item.product_id,
+          quantity: new Big(item.quantity).toString(),
+        }))
+        .sort((a, b) => a.product_id.localeCompare(b.product_id));
+
+    return (
+      existing.sourceBranchId === input.sourceBranchId &&
+      existing.destinationBranchId === input.destinationBranchId &&
+      (existing.notes ?? '').trim() === (input.notes ?? '').trim() &&
+      JSON.stringify(normalizeItems(existing.items)) ===
+        JSON.stringify(normalizeItems(input.items))
+    );
+  } catch {
+    return false;
+  }
+};
+
+const isIdempotencyDuplicateKeyError = (
+  error: unknown,
+): boolean => {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  const mongoError = error as {
+    code?: number;
+    keyPattern?: Record<string, unknown>;
+  };
+
+  return (
+    mongoError.code === 11000 &&
+    mongoError.keyPattern?.businessOwnerId === 1 &&
+    mongoError.keyPattern?.idempotency_key === 1
+  );
+};
 
 export const transferStockBetweenBranches = async ({
   sourceBranchId,
@@ -35,9 +90,12 @@ export const transferStockBetweenBranches = async ({
   businessOwnerId,
   actorId,
   items,
+  idempotencyKey,
   notes,
 }: TransferParams) => {
   const session = await mongoose.startSession();
+  let transferItems: StockTransferItem[] = [];
+  const normalizedNotes = notes?.trim() || undefined;
 
   try {
     session.startTransaction();
@@ -68,13 +126,101 @@ export const transferStockBetweenBranches = async ({
 
     /*
      * ============================================================
-     * 1. VALIDAR SUCURSAL DE ORIGEN
+     * 1. VALIDAR Y NORMALIZAR CANTIDADES
+     * ============================================================
+     * Se valida antes de consultar la idempotencia para que
+     * una solicitud inválida nunca llegue a las existencias ni
+     * al registro histórico.
+     */
+
+    const validatedItems = items.map((item) => {
+      const { product_id, quantity } = item;
+
+      try {
+        if (
+          typeof quantity !== 'string' ||
+          !/^\d+(?:\.\d{1,4})?$/.test(quantity)
+        ) {
+          throw new Error('Formato o precisión inválida');
+        }
+
+        const bigQuantity = new Big(quantity);
+
+        if (bigQuantity.lte(0)) {
+          throw new Error('La cantidad debe ser positiva');
+        }
+
+        return {
+          product_id,
+          quantity: bigQuantity.toString(),
+          bigQuantity,
+          decimalQuantity: mongoose.Types.Decimal128.fromString(
+            bigQuantity.toString(),
+          ),
+          decimalNegativeQuantity: mongoose.Types.Decimal128.fromString(
+            bigQuantity.times(-1).toString(),
+          ),
+        };
+      } catch {
+        throw new AppError(
+          400,
+          `Cantidad inválida para el producto ${product_id}. Debe ser positiva y tener máximo cuatro decimales.`,
+        );
+      }
+    });
+
+    transferItems = validatedItems.map(({ product_id, bigQuantity }) => ({
+      product_id,
+      quantity: bigQuantity.toString(),
+    }));
+
+    /*
+     * ============================================================
+     * 2. CONTROL DE IDEMPOTENCIA PREVIO
+     * ============================================================
+     * Se evalúa antes de consultar sucursales y productos para que
+     * un reintento no dependa del estado actual del negocio.
+     */
+
+    const existingTransfer = await StockTransferModel.findOne({
+      businessOwnerId,
+      idempotency_key: idempotencyKey,
+    }).session(session);
+
+    if (existingTransfer) {
+      if (
+        !isSameTransfer(existingTransfer, {
+          sourceBranchId,
+          destinationBranchId,
+          items: transferItems,
+          notes: normalizedNotes,
+        })
+      ) {
+        throw new AppError(
+          409,
+          'La clave de idempotencia ya fue utilizada para otra transferencia.',
+        );
+      }
+
+      await session.commitTransaction();
+
+      return {
+        success: true,
+        message: 'Esta transferencia ya había sido procesada.',
+        transfer: existingTransfer,
+      };
+    }
+
+    /*
+     * ============================================================
+     * 3. VALIDAR SUCURSAL DE ORIGEN
      * ============================================================
      */
 
     const sourceBranch = await Branch.findOne({
       _id: sourceBranchId,
       owner_id: businessOwnerId,
+      is_active: true,
     })
       .session(session)
       .lean();
@@ -88,13 +234,14 @@ export const transferStockBetweenBranches = async ({
 
     /*
      * ============================================================
-     * 2. VALIDAR SUCURSAL DE DESTINO
+     * 4. VALIDAR SUCURSAL DE DESTINO
      * ============================================================
      */
 
     const destinationBranch = await Branch.findOne({
       _id: destinationBranchId,
       owner_id: businessOwnerId,
+      is_active: true,
     })
       .session(session)
       .lean();
@@ -108,7 +255,7 @@ export const transferStockBetweenBranches = async ({
 
     /*
      * ============================================================
-     * 3. VALIDAR PRODUCTOS
+     * 5. VALIDAR PRODUCTOS
      * ============================================================
      */
 
@@ -128,44 +275,50 @@ export const transferStockBetweenBranches = async ({
 
     /*
      * ============================================================
-     * 4. TRANSFERIR CADA PRODUCTO
+     * 6. CREAR REGISTRO DE TRANSFERENCIA
      * ============================================================
      */
 
-    for (const item of items) {
-      const { product_id, quantity } = item;
+    const [transfer] = await StockTransferModel.create(
+      [
+        {
+          sourceBranchId,
+          destinationBranchId,
+          items: transferItems,
+          status: TransferStatus.COMPLETED,
+          createdBy: actorId,
+          businessOwnerId,
+          idempotency_key: idempotencyKey,
+          notes: normalizedNotes,
+        },
+      ],
+      { session },
+    );
 
-      let decimalQuantity: mongoose.Types.Decimal128;
+    if (!transfer) {
+      throw new AppError(
+        500,
+        'No fue posible crear el registro de la transferencia.',
+      );
+    }
 
-      try {
-        const bigQuantity = new Big(quantity);
+    /*
+     * ============================================================
+     * 7. TRANSFERIR CADA PRODUCTO
+     * ============================================================
+     */
 
-        if (bigQuantity.lte(0)) {
-          throw new AppError(
-            400,
-            'La cantidad a transferir debe ser mayor a 0.',
-          );
-        }
-
-        decimalQuantity =
-          mongoose.Types.Decimal128.fromString(quantity);
-      } catch (error) {
-        if (error instanceof AppError) {
-          throw error;
-        }
-
-        throw new AppError(
-          400,
-          `Cantidad inválida para el producto ${product_id}.`,
-        );
-      }
-
-      const decimalNegativeQuantity =
-        mongoose.Types.Decimal128.fromString(`-${quantity}`);
+    for (const item of validatedItems) {
+      const {
+        product_id,
+        quantity,
+        decimalQuantity,
+        decimalNegativeQuantity,
+      } = item;
 
       /*
        * ------------------------------------------------------------
-       * 4.1 DESCONTAR STOCK DE ORIGEN
+       * 7.1 DESCONTAR STOCK DE ORIGEN
        * ------------------------------------------------------------
        */
 
@@ -206,7 +359,7 @@ export const transferStockBetweenBranches = async ({
 
       /*
        * ------------------------------------------------------------
-       * 4.2 MOVIMIENTO TRANSFER_OUT
+       * 7.2 MOVIMIENTO TRANSFER_OUT
        * ------------------------------------------------------------
        */
 
@@ -223,9 +376,10 @@ export const transferStockBetweenBranches = async ({
               .toString(),
             previous_quantity: previousSourceQuantity,
             new_quantity: newSourceQuantity,
+            reference_id: transfer._id,
             created_by: actorId,
             reason:
-              notes ??
+              normalizedNotes ??
               `Transferencia hacia sucursal ${destinationBranch.name}`,
           },
         ],
@@ -236,7 +390,7 @@ export const transferStockBetweenBranches = async ({
 
       /*
        * ------------------------------------------------------------
-       * 4.3 AUMENTAR / CREAR STOCK DESTINO
+       * 7.3 AUMENTAR / CREAR STOCK DESTINO
        * ------------------------------------------------------------
        */
 
@@ -281,7 +435,7 @@ export const transferStockBetweenBranches = async ({
 
       /*
        * ------------------------------------------------------------
-       * 4.4 MOVIMIENTO TRANSFER_IN
+       * 7.4 MOVIMIENTO TRANSFER_IN
        * ------------------------------------------------------------
        */
 
@@ -296,9 +450,10 @@ export const transferStockBetweenBranches = async ({
             quantity_change: quantity,
             previous_quantity: previousDestinationQuantity,
             new_quantity: newDestinationQuantity,
+            reference_id: transfer._id,
             created_by: actorId,
             reason:
-              notes ??
+              normalizedNotes ??
               `Transferencia desde sucursal ${sourceBranch.name}`,
           },
         ],
@@ -310,44 +465,7 @@ export const transferStockBetweenBranches = async ({
 
     /*
      * ============================================================
-     * 5. CREAR REGISTRO HISTÓRICO DE TRANSFERENCIA
-     * ============================================================
-     */
-
-    const transferItems: StockTransferItem[] = items.map(
-      (item) => ({
-        product_id: item.product_id,
-        quantity: item.quantity,
-      }),
-    );
-
-    const [transfer] = await StockTransferModel.create(
-      [
-        {
-          sourceBranchId,
-          destinationBranchId,
-          items: transferItems,
-          status: TransferStatus.COMPLETED,
-          createdBy: actorId,
-          businessOwnerId,
-          notes,
-        },
-      ],
-      {
-        session,
-      },
-    );
-
-    if (!transfer) {
-      throw new AppError(
-        500,
-        'No fue posible crear el registro de la transferencia.',
-      );
-    }
-
-    /*
-     * ============================================================
-     * 6. COMMIT
+     * 8. COMMIT
      * ============================================================
      */
 
@@ -361,6 +479,35 @@ export const transferStockBetweenBranches = async ({
   } catch (error) {
     if (session.inTransaction()) {
       await session.abortTransaction();
+    }
+
+    if (isIdempotencyDuplicateKeyError(error)) {
+      const existingTransfer = await StockTransferModel.findOne({
+        businessOwnerId,
+        idempotency_key: idempotencyKey,
+      }).lean();
+
+      if (existingTransfer) {
+        const sameTransfer = isSameTransfer(existingTransfer, {
+          sourceBranchId,
+          destinationBranchId,
+          items: transferItems,
+          notes: normalizedNotes,
+        });
+
+        if (!sameTransfer) {
+          throw new AppError(
+            409,
+            'La clave de idempotencia ya fue utilizada para otra transferencia.',
+          );
+        }
+
+        return {
+          success: true,
+          message: 'Esta transferencia ya había sido procesada.',
+          transfer: existingTransfer,
+        };
+      }
     }
 
     throw error;
