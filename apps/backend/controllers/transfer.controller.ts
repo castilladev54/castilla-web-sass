@@ -36,6 +36,15 @@ export const executeStockTransfer = async (
       );
     }
 
+    const idempotencyKey = req.header('x-idempotency-key')?.trim();
+
+    if (!idempotencyKey || idempotencyKey.length > 128) {
+      throw new AppError(
+        400,
+        'La cabecera x-idempotency-key es obligatoria y debe tener máximo 128 caracteres.',
+      );
+    }
+
     const result = await transferStockBetweenBranches({
       sourceBranchId,
       destinationBranchId,
@@ -43,6 +52,7 @@ export const executeStockTransfer = async (
       actorId,
       items,
       notes,
+      idempotencyKey,
     });
 
     return res.status(200).json(result);

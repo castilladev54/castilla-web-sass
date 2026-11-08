@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+import { randomUUID } from 'node:crypto';
 
 import app from '../server.js';
 import { User } from '../models/User.js';
@@ -12,6 +13,7 @@ import {
   StockMovement,
   StockMovementType
 } from '../models/StockMovement.js';
+import { StockTransferModel } from '../models/stockTransfer.model.js';
 
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 
@@ -72,7 +74,8 @@ describe('POST /api/transfers', () => {
       Branch.deleteMany({}),
       Product.deleteMany({}),
       Inventory.deleteMany({}),
-      StockMovement.deleteMany({})
+      StockMovement.deleteMany({}),
+      StockTransferModel.deleteMany({})
     ]);
 
     const passwordHash = await bcrypt.hash('Password123!', 10);
@@ -136,6 +139,7 @@ describe('POST /api/transfers', () => {
     const response = await request(app)
       .post('/api/transfers')
       .set(authHeaders)
+      .set('x-idempotency-key', randomUUID())
       .send({
         sourceBranchId: sourceBranch._id.toString(),
         destinationBranchId: destinationBranch._id.toString(),
@@ -217,6 +221,7 @@ describe('POST /api/transfers', () => {
     const response = await request(app)
       .post('/api/transfers')
       .set(authHeaders)
+      .set('x-idempotency-key', randomUUID())
       .send({
         sourceBranchId: sourceBranch._id.toString(),
         destinationBranchId: destinationBranch._id.toString(),
@@ -255,6 +260,7 @@ describe('POST /api/transfers', () => {
     const response = await request(app)
       .post('/api/transfers')
       .set(authHeaders)
+      .set('x-idempotency-key', randomUUID())
       .send({
         sourceBranchId: sourceBranch._id.toString(),
         destinationBranchId: destinationBranch._id.toString(),
@@ -281,6 +287,7 @@ describe('POST /api/transfers', () => {
     const response = await request(app)
       .post('/api/transfers')
       .set(authHeaders)
+      .set('x-idempotency-key', randomUUID())
       .send({
         sourceBranchId: sourceBranch._id.toString(),
         destinationBranchId: destinationBranch._id.toString(),
@@ -299,6 +306,7 @@ describe('POST /api/transfers', () => {
     const response = await request(app)
       .post('/api/transfers')
       .set(authHeaders)
+      .set('x-idempotency-key', randomUUID())
       .send({
         sourceBranchId: sourceBranch._id.toString(),
         destinationBranchId: destinationBranch._id.toString(),
@@ -317,6 +325,7 @@ describe('POST /api/transfers', () => {
     const response = await request(app)
       .post('/api/transfers')
       .set(authHeaders)
+      .set('x-idempotency-key', randomUUID())
       .send({
         sourceBranchId: sourceBranch._id.toString(),
         destinationBranchId: sourceBranch._id.toString(),
@@ -335,6 +344,7 @@ describe('POST /api/transfers', () => {
     const response = await request(app)
       .post('/api/transfers')
       .set(authHeaders)
+      .set('x-idempotency-key', randomUUID())
       .send({
         sourceBranchId: sourceBranch._id.toString(),
         destinationBranchId: destinationBranch._id.toString(),
@@ -348,6 +358,7 @@ describe('POST /api/transfers', () => {
     const response = await request(app)
       .post('/api/transfers')
       .set(authHeaders)
+      .set('x-idempotency-key', randomUUID())
       .send({
         sourceBranchId: sourceBranch._id.toString(),
         destinationBranchId: destinationBranch._id.toString(),
@@ -366,6 +377,7 @@ describe('POST /api/transfers', () => {
     const response = await request(app)
       .post('/api/transfers')
       .set(authHeaders)
+      .set('x-idempotency-key', randomUUID())
       .send({
         sourceBranchId: sourceBranch._id.toString(),
         destinationBranchId: destinationBranch._id.toString(),
@@ -403,6 +415,7 @@ describe('POST /api/transfers', () => {
     const response = await request(app)
       .post('/api/transfers')
       .set(authHeaders)
+      .set('x-idempotency-key', randomUUID())
       .send({
         sourceBranchId: otherOwnerBranch._id.toString(),
         destinationBranchId: destinationBranch._id.toString(),
@@ -421,6 +434,7 @@ describe('POST /api/transfers', () => {
     const response = await request(app)
       .post('/api/transfers')
       .set(authHeaders)
+      .set('x-idempotency-key', randomUUID())
       .send({
         sourceBranchId: sourceBranch._id.toString(),
         destinationBranchId: otherOwnerBranch._id.toString(),
@@ -439,6 +453,7 @@ describe('POST /api/transfers', () => {
     const response = await request(app)
       .post('/api/transfers')
       .set(authHeaders)
+      .set('x-idempotency-key', randomUUID())
       .send({
         sourceBranchId: sourceBranch._id.toString(),
         destinationBranchId: destinationBranch._id.toString(),
@@ -460,6 +475,7 @@ describe('POST /api/transfers', () => {
       const response = await request(app)
         .post('/api/transfers')
         .set(authHeaders)
+        .set('x-idempotency-key', randomUUID())
         .send({
           sourceBranchId: sourceBranch._id.toString(),
           destinationBranchId: destinationBranch._id.toString(),
@@ -473,5 +489,185 @@ describe('POST /api/transfers', () => {
 
       expect(response.status).toBe(400);
     }
+  });
+
+  it('debe devolver la transferencia existente al repetir la misma solicitud', async () => {
+    const idempotencyKey = randomUUID();
+
+    const payload = {
+      sourceBranchId: sourceBranch._id.toString(),
+      destinationBranchId: destinationBranch._id.toString(),
+      items: [
+        {
+          product_id: product._id.toString(),
+          quantity: '2',
+        },
+      ],
+      notes: 'Prueba de idempotencia',
+    };
+
+    const firstResponse = await request(app)
+      .post('/api/transfers')
+      .set(authHeaders)
+      .set('x-idempotency-key', idempotencyKey)
+      .send(payload);
+
+    const secondResponse = await request(app)
+      .post('/api/transfers')
+      .set(authHeaders)
+      .set('x-idempotency-key', idempotencyKey)
+      .send(payload);
+
+    expect(firstResponse.status).toBe(200);
+    expect(secondResponse.status).toBe(200);
+
+    expect(secondResponse.body.transfer._id).toBe(
+      firstResponse.body.transfer._id,
+    );
+
+    const sourceInventory = await Inventory.findOne({
+      branch_id: sourceBranch._id,
+      product_id: product._id,
+    });
+
+    const destinationInventory = await Inventory.findOne({
+      branch_id: destinationBranch._id,
+      product_id: product._id,
+    });
+
+    const movements = await StockMovement.find({
+      reference_id: firstResponse.body.transfer._id,
+    });
+
+    const transfersCount = await StockTransferModel.countDocuments({
+      businessOwnerId: owner._id,
+      idempotency_key: idempotencyKey,
+    });
+
+    expect(sourceInventory.quantity.toString()).toBe('8');
+    expect(destinationInventory.quantity.toString()).toBe('2');
+    expect(movements).toHaveLength(2);
+    expect(transfersCount).toBe(1);
+  });
+
+  it('debe rechazar la misma clave cuando cambia el contenido', async () => {
+    const idempotencyKey = randomUUID();
+
+    const firstPayload = {
+      sourceBranchId: sourceBranch._id.toString(),
+      destinationBranchId: destinationBranch._id.toString(),
+      items: [
+        {
+          product_id: product._id.toString(),
+          quantity: '2',
+        },
+      ],
+      notes: 'Prueba de conflicto',
+    };
+
+    const secondPayload = {
+      ...firstPayload,
+      items: [
+        {
+          product_id: product._id.toString(),
+          quantity: '3',
+        },
+      ],
+    };
+
+    const firstResponse = await request(app)
+      .post('/api/transfers')
+      .set(authHeaders)
+      .set('x-idempotency-key', idempotencyKey)
+      .send(firstPayload);
+
+    const secondResponse = await request(app)
+      .post('/api/transfers')
+      .set(authHeaders)
+      .set('x-idempotency-key', idempotencyKey)
+      .send(secondPayload);
+
+    expect(firstResponse.status).toBe(200);
+    expect(secondResponse.status).toBe(409);
+
+    const sourceInventory = await Inventory.findOne({
+      branch_id: sourceBranch._id,
+      product_id: product._id,
+    });
+
+    const destinationInventory = await Inventory.findOne({
+      branch_id: destinationBranch._id,
+      product_id: product._id,
+    });
+
+    const movements = await StockMovement.find({
+      reference_id: firstResponse.body.transfer._id,
+    });
+
+    const transfersCount = await StockTransferModel.countDocuments({
+      businessOwnerId: owner._id,
+      idempotency_key: idempotencyKey,
+    });
+
+    expect(sourceInventory.quantity.toString()).toBe('8');
+    expect(destinationInventory.quantity.toString()).toBe('2');
+    expect(movements).toHaveLength(2);
+    expect(transfersCount).toBe(1);
+  });
+
+  it('debe procesar una sola transferencia ante solicitudes simultáneas', async () => {
+    const idempotencyKey = randomUUID();
+
+    const payload = {
+      sourceBranchId: sourceBranch._id.toString(),
+      destinationBranchId: destinationBranch._id.toString(),
+      items: [{ product_id: product._id.toString(), quantity: '2' }],
+      notes: 'Prueba de concurrencia',
+    };
+
+    const [firstResponse, secondResponse] = await Promise.all([
+      request(app)
+        .post('/api/transfers')
+        .set(authHeaders)
+        .set('x-idempotency-key', idempotencyKey)
+        .send(payload),
+
+      request(app)
+        .post('/api/transfers')
+        .set(authHeaders)
+        .set('x-idempotency-key', idempotencyKey)
+        .send(payload),
+    ]);
+
+    expect(firstResponse.status).toBe(200);
+    expect(secondResponse.status).toBe(200);
+
+    expect(secondResponse.body.transfer._id).toBe(
+      firstResponse.body.transfer._id,
+    );
+
+    const sourceInventory = await Inventory.findOne({
+      branch_id: sourceBranch._id,
+      product_id: product._id,
+    });
+
+    const destinationInventory = await Inventory.findOne({
+      branch_id: destinationBranch._id,
+      product_id: product._id,
+    });
+
+    const movements = await StockMovement.find({
+      reference_id: firstResponse.body.transfer._id,
+    });
+
+    const transfersCount = await StockTransferModel.countDocuments({
+      businessOwnerId: owner._id,
+      idempotency_key: idempotencyKey,
+    });
+
+    expect(sourceInventory.quantity.toString()).toBe('8');
+    expect(destinationInventory.quantity.toString()).toBe('2');
+    expect(movements).toHaveLength(2);
+    expect(transfersCount).toBe(1);
   });
 });
