@@ -5,6 +5,7 @@ import {
   getOrSetCache,
   getCacheVersion,
   bumpCacheVersion,
+  bumpBranchCacheVersion,
   buildPaginatedKey,
 } from "../lib/redis.js";
 import Big from "big.js";
@@ -647,17 +648,27 @@ export const updateSale = async (
     const ownerId = req.businessOwnerId;
 
     // El servicio transaccional maneja stock, SaleDetails y campos simples en una sola sesión ACID
-    const updatedSale = await withTransactionRetry(() =>
-      updateSaleProcess(id as string, ownerId, { items, payment_method, status }),
+    const updatedSale = await withTransactionRetry((session) =>
+      updateSaleProcess(
+        id as string,
+        ownerId,
+        { items, payment_method, status },
+        session,
+      ),
     );
 
     // Invalidar caché de ventas, productos (si hubo cambios de stock) y la venta individual
     await Promise.all([
       bumpCacheVersion("sales", String(ownerId)),
+      bumpBranchCacheVersion(
+        "products",
+        String(ownerId),
+        String(updatedSale.branch_id),
+      ),
       invalidateCache(
         `sale:${id}:${req.actorId}`,
         `sale:v2:${id}:${req.actorId}`,
-        `sale:v2:${id}:${ownerId}`
+        `sale:v2:${id}:${ownerId}`,
       ),
     ]);
 

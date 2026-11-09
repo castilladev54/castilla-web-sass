@@ -296,7 +296,6 @@ export const fetchSaleById = async (
 export interface UpdateSaleInput {
   items?: SaleItemInput[];
   payment_method?: PaymentMethod;
-  branchId?: BranchId;
   status?: "pending" | "completed" | "cancelled";
 }
 
@@ -311,23 +310,20 @@ export interface UpdateSaleInput {
 export const updateSaleProcess = async (
   saleId: string,
   ownerId: BusinessOwnerId,
-  { items, payment_method, branchId, status }: UpdateSaleInput,
+  { items, payment_method, status }: UpdateSaleInput,
+  session: mongoose.ClientSession,
 ) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  const sale = await Sale.findOne({
+    _id: saleId,
+    business_owner_id: ownerId,
+  }).session(session);
+  if (!sale)
+    throw new Error("Venta no encontrada o no pertenece a tu negocio.");
+  if (sale.status === "cancelled")
+    throw new Error("No se puede editar una venta anulada.");
 
-  try {
-    const sale = await Sale.findOne({
-      _id: saleId,
-      business_owner_id: ownerId,
-    }).session(session);
-    if (!sale)
-      throw new Error("Venta no encontrada o no pertenece a tu negocio.");
-    if (sale.status === "cancelled")
-      throw new Error("No se puede editar una venta anulada.");
-
-    // Usar el branchId de la venta original si no se especifica uno nuevo
-    const effectiveBranchId = (branchId ?? sale.branch_id) as BranchId;
+  // La sucursal de una venta es inmutable.
+  const effectiveBranchId = sale.branch_id as BranchId;
 
     // Validar que la sucursal de destino existe y pertenece al negocio
     const branch = await Branch.findOne({
@@ -510,22 +506,9 @@ export const updateSaleProcess = async (
       sale.status = status;
     }
 
-    await sale.save({ session });
-    await session.commitTransaction();
-    session.endSession();
+  await sale.save({ session });
 
-    await bumpBranchCacheVersion(
-      "products",
-      String(ownerId),
-      String(effectiveBranchId),
-    );
-
-    return sale;
-  } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
-    throw error;
-  }
+  return sale;
 };
 
 // ─── Anular Venta ─────────────────────────────────────────────────────────────
