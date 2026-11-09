@@ -1,7 +1,7 @@
 services:
   # ─── MongoDB (Replica Set required for transactions) ──────────
   mongo:
-    image: bitnami/mongodb:7.0
+    image: soldevelo/mongodb:7.0
     container_name: inventory-mongo
     restart: unless-stopped
     environment:
