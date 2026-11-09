@@ -79,17 +79,56 @@ export type UpdateCategoryDTO = z.infer<typeof updateCategoryBodySchema>;
 
 // ─── PRODUCTOS ──────────────────────────────────────────────────────────────
 
-export const createProductBodySchema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  description: z.string().optional(),
-  barcode: z.string().min(1, 'Barcode cannot be empty').optional(),
-  price: z.coerce.number().positive('El precio debe ser mayor a 0'),
-  unit_type: z.enum(['unidad', 'kg', 'litro', 'metro'] as const).optional(),
-  category: z.string().regex(OBJECT_ID_REGEX, 'Invalid Category ID format'),
-  max_debt_limit: numericString.optional(),
-  initial_stock: numericString.optional(),
-  branch_id: z.string().regex(OBJECT_ID_REGEX, 'Invalid Branch ID format').optional(),
-});
+const positiveInitialStockSchema = numericString.refine(
+  (value) => Number(value) > 0,
+  'El inventario inicial debe ser mayor que 0'
+);
+
+export const createProductBodySchema = z
+  .object({
+    name: z.string().min(1, 'Name is required'),
+    description: z.string().optional(),
+    barcode: z.string().min(1, 'Barcode cannot be empty').optional(),
+    price: z.coerce.number().positive('El precio debe ser mayor a 0'),
+    unit_type: z.enum(['unidad', 'kg', 'litro', 'metro']).default('unidad'),
+    category: z.string().regex(OBJECT_ID_REGEX, 'Invalid Category ID format'),
+    max_debt_limit: numericString.optional(),
+    initial_stock: positiveInitialStockSchema.optional(),
+    branch_id: z.string().regex(OBJECT_ID_REGEX, 'Invalid Branch ID format').optional(),
+  })
+  .superRefine((data, ctx) => {
+    const hasInitialStock = data.initial_stock !== undefined;
+    const hasBranch = data.branch_id !== undefined;
+
+    if (hasInitialStock && !hasBranch) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['branch_id'],
+        message: 'Debes seleccionar una sucursal para registrar el inventario inicial',
+      });
+    }
+
+    if (!hasInitialStock && hasBranch) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['initial_stock'],
+        message: 'Debes indicar la cantidad inicial al seleccionar una sucursal',
+      });
+    }
+
+    if (
+      data.unit_type === 'unidad' &&
+      hasInitialStock &&
+      Number(data.initial_stock) % 1 !== 0
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['initial_stock'],
+        message: 'Los productos por unidad deben tener cantidades enteras',
+      });
+    }
+  });
+
 export type CreateProductDTO = z.infer<typeof createProductBodySchema>;
 
 export const updateProductBodySchema = z
