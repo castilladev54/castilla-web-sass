@@ -64,8 +64,8 @@ let mongoReplSet;
 
 beforeAll(async () => {
   mongoReplSet = await MongoMemoryReplSet.create({
-    replSet: { count: 1, launchTimeout: 60000 },
-    instanceOpts: [{ launchTimeout: 60000 }],
+    replSet: { count: 1, launchTimeout: 120000 },
+    instanceOpts: [{ launchTimeout: 120000 }],
   });
 
   const mongoUri = mongoReplSet.getUri();
@@ -81,7 +81,7 @@ beforeAll(async () => {
     StockMovement.init(),
     Branch.init(),
   ]);
-}, 120000);
+}, 180000);
 
 afterAll(async () => {
   await mongoose.disconnect();
@@ -443,7 +443,7 @@ describe("Product Controllers Integration", () => {
         ]);
       });
 
-      it('should return the complete catalog without inventory when no branch is selected', async () => {
+      it('should return all branch inventories and consolidated totalStock for the tenant products', async () => {
         const response = await request(app)
           .get('/api/products')
           .set(authHeaders);
@@ -452,13 +452,37 @@ describe("Product Controllers Integration", () => {
         expect(response.body.success).toBe(true);
         expect(response.body.products).toHaveLength(2);
 
-        for (const product of response.body.products) {
-          expect(product.branchInventories).toEqual([]);
-          expect(Number(product.totalStock)).toBe(0);
-        }
+        const productA = response.body.products.find(
+          product => product.name === 'Producto A'
+        );
+        const productB = response.body.products.find(
+          product => product.name === 'Producto B'
+        );
+
+        expect(productA).toBeDefined();
+        expect(productB).toBeDefined();
+
+        // Producto A tiene inventario en ambas sucursales (9 + 3 = 12)
+        expect(productA.branchInventories).toHaveLength(2);
+        expect(Number(productA.totalStock)).toBe(12);
+
+        const invA1 = productA.branchInventories.find(
+          inv => inv.branch_id === branchId.toString()
+        );
+        const invA2 = productA.branchInventories.find(
+          inv => inv.branch_id === secondBranchId.toString()
+        );
+        expect(Number(invA1.stock)).toBe(9);
+        expect(Number(invA2.stock)).toBe(3);
+
+        // Producto B tiene inventario solo en segunda sucursal (5)
+        expect(productB.branchInventories).toHaveLength(1);
+        expect(Number(productB.totalStock)).toBe(5);
+        expect(productB.branchInventories[0].branch_id).toBe(secondBranchId.toString());
+        expect(Number(productB.branchInventories[0].stock)).toBe(5);
       });
 
-      it('should return only inventory belonging to the selected branch A', async () => {
+      it('should preserve all branch inventories when an active branch header is provided', async () => {
         const response = await request(app)
           .get('/api/products')
           .set({
@@ -473,52 +497,34 @@ describe("Product Controllers Integration", () => {
         const productA = response.body.products.find(
           product => product.name === 'Producto A'
         );
-
-        const productB = response.body.products.find(
-          product => product.name === 'Producto B'
-        );
-
-        expect(productA).toBeDefined();
-        expect(productB).toBeDefined();
-
-        expect(productA.branchInventories).toHaveLength(1);
-        expect(Number(productA.branchInventories[0].stock)).toBe(9);
-        expect(Number(productA.totalStock)).toBe(9);
-
-        expect(productB.branchInventories).toEqual([]);
-        expect(Number(productB.totalStock)).toBe(0);
+        expect(productA.branchInventories).toHaveLength(2);
+        expect(Number(productA.totalStock)).toBe(12);
       });
 
-      it('should return only inventory belonging to the selected branch B', async () => {
+      it('should not include inventories from other tenants', async () => {
+        const otherTenantId = new mongoose.Types.ObjectId();
+        const productA = await Product.findOne({ name: 'Producto A' });
+
+        // Inventario creado por otro tenant para el mismo product_id
+        await Inventory.create({
+          product_id: productA._id,
+          branch_id: branchId,
+          owner_id: otherTenantId,
+          quantity: mongoose.Types.Decimal128.fromString('100'),
+        });
+
         const response = await request(app)
           .get('/api/products')
-          .set({
-            ...authHeaders,
-            'x-branch-id': secondBranchId.toString(),
-          });
+          .set(authHeaders);
 
         expect(response.status).toBe(200);
-        expect(response.body.success).toBe(true);
-        expect(response.body.products).toHaveLength(2);
-
-        const productA = response.body.products.find(
+        const resProductA = response.body.products.find(
           product => product.name === 'Producto A'
         );
 
-        const productB = response.body.products.find(
-          product => product.name === 'Producto B'
-        );
-
-        expect(productA).toBeDefined();
-        expect(productB).toBeDefined();
-
-        expect(productA.branchInventories).toHaveLength(1);
-        expect(Number(productA.branchInventories[0].stock)).toBe(3);
-        expect(Number(productA.totalStock)).toBe(3);
-
-        expect(productB.branchInventories).toHaveLength(1);
-        expect(Number(productB.branchInventories[0].stock)).toBe(5);
-        expect(Number(productB.totalStock)).toBe(5);
+        // No debe sumar el inventario del otro tenant (permanece en 12)
+        expect(Number(resProductA.totalStock)).toBe(12);
+        expect(resProductA.branchInventories).toHaveLength(2);
       });
     });
   });

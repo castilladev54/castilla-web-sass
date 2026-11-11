@@ -291,38 +291,29 @@ export const getProducts = async (
             let: {
               productId: "$_id",
             },
-            pipeline: branchId
-              ? [
-                  {
-                    $match: {
-                      $expr: {
-                        $and: [
-                          { $eq: ["$product_id", "$$productId"] },
-                          { $eq: ["$branch_id", branchId] },
-                          { $eq: ["$owner_id", ownerObjectId] },
-                        ],
-                      },
-                    },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ["$product_id", "$$productId"] },
+                      { $eq: ["$owner_id", ownerObjectId] },
+                    ],
                   },
-                  {
-                    $project: {
-                      _id: 1,
-                      product_id: 1,
-                      branch_id: 1,
-                      quantity: 1,
-                      min_stock_alert: 1,
-                      createdAt: 1,
-                      updatedAt: 1,
-                    },
-                  },
-                ]
-              : [
-                  {
-                    $match: {
-                      $expr: { $eq: ["$_id", null] },
-                    },
-                  },
-                ],
+                },
+              },
+              {
+                $project: {
+                  _id: 1,
+                  product_id: 1,
+                  branch_id: 1,
+                  quantity: 1,
+                  min_stock_alert: 1,
+                  createdAt: 1,
+                  updatedAt: 1,
+                },
+              },
+            ],
             as: "inventoryData",
           },
         },

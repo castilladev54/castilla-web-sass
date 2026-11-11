@@ -368,8 +368,7 @@ const ProductManagerInner = () => {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
 
-    // Payload base: solo campos de catálogo (sin dependencias logísticas)
-    const payload: any = {
+    const catalogPayload = {
       name: formData.name,
       description: formData.description,
       price: Number(formData.price),
@@ -379,7 +378,7 @@ const ProductManagerInner = () => {
     };
 
     if (editingId) {
-      // Creación/Edición pura de catálogo — sin stock_inicial, sin branch_id
+      const payload: UpdateProductPayload = catalogPayload;
 
       toast.promise(
         updateMutation.mutateAsync({ id: editingId, data: payload }),
@@ -389,23 +388,53 @@ const ProductManagerInner = () => {
             closeForm();
             return 'Producto actualizado';
           },
-          error: (err: any) => err.response?.data?.message || 'Error al actualizar',
+          error: (err: any) =>
+            err.response?.data?.message || 'Error al actualizar',
         }
       );
-    } else {
-      // Creación pura de catálogo — sin stock_inicial, sin branch_id
-      toast.promise(
-        createMutation.mutateAsync(payload),
-        {
-          loading: 'Creando producto...',
-          success: () => {
-            closeForm();
-            return 'Producto creado';
-          },
-          error: (err: any) => err.response?.data?.message || 'Error al crear',
-        }
-      );
+
+      return;
     }
+
+    const payload: CreateProductPayload = { ...catalogPayload };
+
+    if (registerInitialStock) {
+      const quantity = Number(initialStock);
+      const selectedBranch = activeBranches.find(
+        (branch) => String(branch._id) === initialStockBranchId
+      );
+
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        toast.error('El inventario inicial debe ser mayor que cero');
+        return;
+      }
+
+      if (formData.unit_type === 'unidad' && !Number.isInteger(quantity)) {
+        toast.error('La cantidad de unidades debe ser un número entero');
+        return;
+      }
+
+      if (!selectedBranch) {
+        toast.error('Selecciona una sucursal activa');
+        return;
+      }
+
+      payload.initial_stock = initialStock;
+      payload.branch_id = String(selectedBranch._id);
+    }
+
+    toast.promise(
+      createMutation.mutateAsync(payload),
+      {
+        loading: 'Creando producto...',
+        success: () => {
+          closeForm();
+          return 'Producto creado';
+        },
+        error: (err: any) =>
+          err.response?.data?.message || 'Error al crear',
+      }
+    );
   };
 
   const handleConfirmDelete = async () => {
@@ -612,6 +641,83 @@ const ProductManagerInner = () => {
             placeholder="Detalles sobre el producto..."
             rows={3}
           />
+
+          {!editingId && (
+            <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={registerInitialStock}
+                  onChange={(e) => setRegisterInitialStock(e.target.checked)}
+                  disabled={activeBranches.length === 0}
+                  className="h-4 w-4 accent-orange-500"
+                />
+
+                <span className="text-sm font-medium text-white">
+                  Registrar inventario inicial
+                </span>
+              </label>
+
+              {activeBranches.length === 0 && (
+                <p className="text-sm text-amber-400">
+                  No hay sucursales activas disponibles. Puedes crear el producto
+                  sin inventario inicial.
+                </p>
+              )}
+
+              {registerInitialStock && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-1">
+                    <label
+                      htmlFor="initial-stock-branch"
+                      className="text-sm font-medium text-gray-300"
+                    >
+                      Sucursal
+                    </label>
+
+                    <select
+                      id="initial-stock-branch"
+                      value={initialStockBranchId}
+                      onChange={(e) => setInitialStockBranchId(e.target.value)}
+                      required
+                      className={selectClass}
+                    >
+                      <option value="" disabled>
+                        Selecciona una sucursal
+                      </option>
+
+                      {activeBranches.map((branch) => (
+                        <option key={branch._id} value={String(branch._id)}>
+                          {branch.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label
+                      htmlFor="initial-stock"
+                      className="text-sm font-medium text-gray-300"
+                    >
+                      Cantidad inicial
+                    </label>
+
+                    <input
+                      id="initial-stock"
+                      type="number"
+                      min="0"
+                      step={formData.unit_type === 'unidad' ? '1' : 'any'}
+                      value={initialStock}
+                      onChange={(e) => setInitialStock(e.target.value)}
+                      required
+                      placeholder="Ej. 25"
+                      className={selectClass}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="flex justify-end gap-3 pt-2">
             <Button variant="secondary" type="button" onClick={closeForm} disabled={isWorking}>
