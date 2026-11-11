@@ -9,6 +9,10 @@ import {
   useBranchesQuery,
 } from '../hooks/queries';
 import { useExchangeRateQuery } from '../hooks/queries/useExchangeRateQueries';
+import type {
+  CreateProductPayload,
+  UpdateProductPayload,
+} from '../hooks/queries/useProductQueries';
 import { toBs } from '../utils/currency';
 import { useAuthStore } from '../store/authStore';
 import toast from 'react-hot-toast';
@@ -34,15 +38,18 @@ interface ProductFormData {
   name: string;
   description: string;
   price: string;
-  stock: string;
   category: string;
   unit_type: 'unidad' | 'kg' | 'litro' | 'metro';
   barcode: string;
 }
 
 const EMPTY_FORM: ProductFormData = {
-  name: '', description: '', price: '', stock: '',
-  category: '', unit_type: 'unidad', barcode: '',
+  name: '',
+  description: '',
+  price: '',
+  category: '',
+  unit_type: 'unidad',
+  barcode: '',
 };
 
 const UNIT_OPTIONS = [
@@ -285,6 +292,7 @@ const ProductManagerInner = () => {
   const { data: categories = [] } = useAllCategoriesQuery();
   const { data: rateData } = useExchangeRateQuery();
   const { data: branches = [] } = useBranchesQuery();
+  const activeBranches = branches.filter((branch) => branch.is_active);
   const exchangeRate = rateData?.rate ?? "1";
   const activeBranchId = useAuthStore((s) => s.activeBranchId);
 
@@ -302,6 +310,9 @@ const ProductManagerInner = () => {
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<ProductId | null>(null);
   const [formData, setFormData] = useState<ProductFormData>(EMPTY_FORM);
+  const [registerInitialStock, setRegisterInitialStock] = useState(false);
+  const [initialStock, setInitialStock] = useState('');
+  const [initialStockBranchId, setInitialStockBranchId] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
 
@@ -326,15 +337,31 @@ const ProductManagerInner = () => {
 
   const handleEdit = (product: Product) => {
     setEditingId(product._id);
+    setRegisterInitialStock(false);
+    setInitialStock('');
+    setInitialStockBranchId('');
+
     setFormData({
       name: product.name,
       description: product.description || '',
       price: String(product.price),
-      stock: '',
-      category: typeof product.category === 'object' && product.category ? product.category._id : String(product.category),
+      category:
+        typeof product.category === 'object' && product.category
+          ? product.category._id
+          : String(product.category),
       unit_type: product.unit_type || 'unidad',
       barcode: product.barcode || '',
     });
+
+    setIsFormOpen(true);
+  };
+
+  const openCreateForm = () => {
+    setEditingId(null);
+    setFormData(EMPTY_FORM);
+    setRegisterInitialStock(false);
+    setInitialStock('');
+    setInitialStockBranchId('');
     setIsFormOpen(true);
   };
 
@@ -400,6 +427,9 @@ const ProductManagerInner = () => {
     setIsFormOpen(false);
     setEditingId(null);
     setFormData(EMPTY_FORM);
+    setRegisterInitialStock(false);
+    setInitialStock('');
+    setInitialStockBranchId('');
   };
 
   const selectClass =
@@ -427,7 +457,7 @@ const ProductManagerInner = () => {
             <Button
               type="button"
               variant="primary"
-              onClick={() => setIsFormOpen(true)}
+              onClick={openCreateForm}
               className="flex items-center gap-2 w-full sm:w-auto"
             >
               <Plus size={18} />
@@ -603,7 +633,10 @@ const ProductManagerInner = () => {
         emptyMessage="No hay productos"
         emptyIcon={<PackageOpen size={30} />}
         emptyDetail="Aún no has agregado ningún producto al inventario."
-        emptyAction={{ label: 'Agregar mi primer producto', onClick: () => setIsFormOpen(true) }}
+        emptyAction={{
+          label: 'Agregar mi primer producto',
+          onClick: openCreateForm,
+        }}
         currentPage={currentPage}
         totalPages={totalPages}
         onPageChange={setCurrentPage}

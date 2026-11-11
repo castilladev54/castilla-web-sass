@@ -12,8 +12,10 @@ import type {
   BranchId,
   ApiProductResponse,
   ApiProductListResponse,
+  CreateProductDTO,
+  UpdateProductDTO,
 } from '@inventory/shared';
-import type { CreateStockTransferDTO } from '@inventory/shared';
+
 
 // ─── Query Keys ──────────────────────────────────────────────────────────────
 
@@ -33,19 +35,17 @@ export const transferProductKeys = {
 
 // ─── Tipos de Payload ─────────────────────────────────────────────────────────
 
-export interface CreateProductPayload {
-  name: string;
-  description: string;
-  price: number;
-  category: string;
-  barcode?: string;
-  unit_type: 'unidad' | 'kg' | 'litro' | 'metro';
-  /** Stock inicial para la sucursal activa */
-  initialStock?: number;
-  minStock?: number;
-}
+export type CreateProductPayload = CreateProductDTO;
 
-export type UpdateProductPayload = Partial<CreateProductPayload>;
+export type UpdateProductPayload = Pick<
+  UpdateProductDTO,
+  | 'name'
+  | 'description'
+  | 'barcode'
+  | 'price'
+  | 'unit_type'
+  | 'category'
+>;
 
 interface ProductListResponse {
   products: Product[];
