@@ -14,8 +14,6 @@ import {
   getBranchCacheVersion,
   bumpBranchCacheVersion,
 } from "../lib/redis.js";
-import { createAdjustmentProcess } from "../services/adjustment.service.js";
-import { ProductId } from "../types/brands.js";
 import type {
   GetProductsResult,
   ProductFacetAggregationResult,
@@ -495,45 +493,44 @@ export const updateProduct = async (
       category,
       unit_type,
       barcode,
-      new_stock,
-      stock_reason,
-      branch_id,
     } = req.body;
 
-    // ── 0. Capturar barcode actual SOLO si viene en la request ────────────────
-    // Sin esto, la invalidación del caché de barcode viejo sería imposible.
-    let oldBarcode;
+    // Capturar el barcode anterior para invalidar su caché si cambia.
+    let oldBarcode: string | undefined;
+
     if (barcode !== undefined) {
       const old = await Product.findOne(
         { _id: id, user: req.businessOwnerId },
         "barcode",
       ).lean();
+
       oldBarcode = old?.barcode;
     }
 
+    // Validar que la categoría pertenezca al negocio.
     if (category) {
       const categoryExists = await Category.findOne({
         _id: category,
         user: req.businessOwnerId,
       });
+
       if (!categoryExists) {
-        res
-          .status(400)
-          .json({
-            success: false,
-            message: "La categoría especificada no existe",
-          });
+        res.status(400).json({
+          success: false,
+          message: "La categoría especificada no existe",
+        });
         return;
       }
     }
 
-    // ── 2. Validar barcode duplicado si se envía ──────────────────────────────
+    // Evitar códigos de barras duplicados dentro del negocio.
     if (barcode) {
       const barcodeExists = await Product.findOne({
         barcode,
         user: req.businessOwnerId,
         _id: { $ne: id },
       });
+
       if (barcodeExists) {
         res.status(400).json({
           success: false,
@@ -552,8 +549,8 @@ export const updateProduct = async (
       barcode?: string | null;
     }
 
-    // ── 3. Construir payload de actualización (solo campos de metadata) ───────
     const updateData: ProductUpdateFields = {};
+
     if (name !== undefined) updateData.name = name;
     if (description !== undefined) updateData.description = description;
     if (price !== undefined) updateData.price = price;
@@ -561,120 +558,68 @@ export const updateProduct = async (
     if (unit_type !== undefined) updateData.unit_type = unit_type;
     if (barcode !== undefined) updateData.barcode = barcode;
 
-    // ── 4a. SIN corrección de stock → update simple ──────────────────────────
-    if (new_stock === undefined) {
-      const product = await Product.findOneAndUpdate(
-        { _id: id, user: req.businessOwnerId },
-        updateData,
-        { returnDocument: "after", runValidators: true },
-      ).populate("category", "name");
+    const product = await Product.findOneAndUpdate(
+      { _id: id, user: req.businessOwnerId },
+      updateData,
+      { returnDocument: "after", runValidators: true },
+    ).populate("category", "name");
 
-      if (!product) {
-        res
-          .status(404)
-          .json({ success: false, message: "Producto no encontrado" });
-        return;
-      }
-
-      // Invalidar caché paginada (bump de versión) + claves individuales
-      const keysToInvalidate = [`product:${id}:${req.businessOwnerId}`];
-      if (oldBarcode)
-        keysToInvalidate.push(`barcode:${oldBarcode}:${req.businessOwnerId}`);
-      if (barcode && barcode !== oldBarcode)
-        keysToInvalidate.push(`barcode:${barcode}:${req.businessOwnerId}`);
-      await Promise.all([
-        bumpCacheVersion("products", req.businessOwnerId),
-        invalidateCache(...keysToInvalidate),
-      ]);
-
-      res.status(200).json({ success: true, product });
-      return;
-    }
-
-    // Si hay corrección de stock, la sucursal es obligatoria
-    const branchId = req.branchId;
-    if (!branchId) {
-      res.status(400).json({
+    if (!product) {
+      res.status(404).json({
         success: false,
-        message:
-          "Contexto de sucursal no válido o no autorizado para realizar un ajuste de stock.",
+        message: "Producto no encontrado",
       });
       return;
     }
 
-    // ── 4b. CON corrección de stock → transacción ACID única ─────────────────
-    // Pasamos la sesión al servicio de ajuste para que metadata + stock + Kardex
-    // se confirmen en UN SOLO commit atómico.
-    const session = await mongoose.startSession();
-    session.startTransaction();
+    // La escritura ya fue confirmada. La invalidación es secundaria.
+    const keysToInvalidate = [
+      `product:${id}:${req.businessOwnerId}`,
+    ];
 
-    try {
-      // 4b.1 Actualizar campos de metadata del producto (comparte sesión)
-      const product = await Product.findOneAndUpdate(
-        { _id: id, user: req.businessOwnerId },
-        updateData,
-        { returnDocument: "after", runValidators: true, session },
-      ).populate("category", "name");
-
-      if (!product) {
-        await session.abortTransaction();
-        session.endSession();
-        res
-          .status(404)
-          .json({ success: false, message: "Producto no encontrado" });
-        return;
-      }
-
-      // 4b.2 Ajuste de stock + registro en Kardex dentro de la MISMA sesión.
-      await createAdjustmentProcess(
-        req.actorId,
-        req.businessOwnerId,
-        branchId,
-        id as unknown as ProductId,
-        new_stock,
-        stock_reason,
-        "Corrección desde edición de producto",
-        session,
+    if (oldBarcode) {
+      keysToInvalidate.push(
+        `barcode:${oldBarcode}:${req.businessOwnerId}`,
       );
-
-      // 4b.3 Commit único: metadata + stock + Kardex son atómicos
-      await session.commitTransaction();
-      session.endSession();
-
-      // Invalidar caché paginada (bump de versión) + claves individuales
-      const keysToInvalidate = [
-        `product:${id}:${req.businessOwnerId}`,
-        `adjustments:${req.businessOwnerId}`,
-      ];
-      if (oldBarcode)
-        keysToInvalidate.push(`barcode:${oldBarcode}:${req.businessOwnerId}`);
-      if (barcode && barcode !== oldBarcode)
-        keysToInvalidate.push(`barcode:${barcode}:${req.businessOwnerId}`);
-      await Promise.all([
-        bumpCacheVersion("products", req.businessOwnerId),
-        invalidateCache(...keysToInvalidate),
-      ]);
-
-      res.status(200).json({
-        success: true,
-        product,
-        stockAdjusted: true,
-        message: `Producto actualizado. Stock ajustado a ${new_stock} en la sucursal.`,
-      });
-      return;
-    } catch (innerError) {
-      if (session.inTransaction()) {
-        await session.abortTransaction();
-      }
-      session.endSession();
-      throw innerError;
     }
+
+    if (barcode && barcode !== oldBarcode) {
+      keysToInvalidate.push(
+        `barcode:${barcode}:${req.businessOwnerId}`,
+      );
+    }
+
+    const cacheResults = await Promise.allSettled([
+      bumpCacheVersion("products", req.businessOwnerId),
+      invalidateCache(...keysToInvalidate),
+    ]);
+
+    cacheResults.forEach((result) => {
+      if (result.status === "rejected") {
+        getCurrentLogger().error(
+          {
+            err: result.reason,
+            productId: id,
+            businessOwnerId: req.businessOwnerId,
+          },
+          "Failed to invalidate product cache after update",
+        );
+      }
+    });
+
+    res.status(200).json({ success: true, product });
   } catch (error: unknown) {
     const message =
-      error instanceof Error ? error.message : "Error interno del servidor";
-    console.error("updateProduct error:", message);
-    const status = message.includes("igual al stock actual") ? 400 : 500;
-    res.status(status).json({ success: false, message });
+      error instanceof Error
+        ? error.message
+        : "Error interno del servidor";
+
+    getCurrentLogger().error(
+      { err: error, productId: req.params.id },
+      "updateProduct error",
+    );
+
+    res.status(500).json({ success: false, message });
   }
 };
 

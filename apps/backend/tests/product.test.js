@@ -20,6 +20,10 @@ import { Inventory } from "../models/Inventory.js";
 import { StockMovement } from "../models/StockMovement.ts";
 import bcryptjs from "bcryptjs";
 import { getAuthHeadersForUser } from "./helpers/auth.js";
+import {
+  bumpCacheVersion,
+  invalidateCache,
+} from "../lib/redis.js";
 
 // Mocking external email delivery API to avoid sending real emails
 vi.mock("../mailtrap/emails.js", () => ({
@@ -576,6 +580,104 @@ describe("Product Controllers Integration", () => {
       expect(response.body.product.price).toBe("20");
       expect(response.body.product.unit_type).toBe("litro");
       // stock ya no vive en Product — migrado a Inventory
+    });
+
+    it("should update catalog data without modifying inventory or stock movements", async () => {
+      const initialStock = "12.5";
+
+      const createRes = await request(app)
+        .post("/api/products")
+        .set({ ...authHeaders, "x-branch-id": branchId.toString() })
+        .send({
+          name: "Product With Inventory",
+          price: 25,
+          category: categoryId,
+          unit_type: "kg",
+          initial_stock: initialStock,
+          branch_id: branchId.toString(),
+        });
+
+      expect(createRes.status).toBe(201);
+
+      const productId = createRes.body.product._id;
+
+      const response = await request(app)
+        .put(`/api/products/${productId}`)
+        .set({ ...authHeaders, "x-branch-id": branchId.toString() })
+        .send({
+          name: "Updated Catalog Product",
+          price: 30,
+          new_stock: "99",
+          stock_reason: "correction",
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.product.name).toBe("Updated Catalog Product");
+      expect(response.body.product.price).toBe("30");
+
+      const inventory = await Inventory.findOne({
+        product_id: productId,
+        branch_id: branchId,
+        owner_id: userId,
+      });
+
+      expect(inventory).not.toBeNull();
+      expect(inventory.quantity.toString()).toBe(initialStock);
+
+      const movements = await StockMovement.find({
+        product_id: productId,
+        branch_id: branchId,
+        owner_id: userId,
+      });
+
+      expect(movements).toHaveLength(1);
+      expect(movements[0].type).toBe("INITIAL_INVENTORY");
+      expect(movements[0].quantity_change.toString()).toBe(initialStock);
+    });
+
+    it("should return 200 and preserve the update when cache invalidation fails", async () => {
+      const createRes = await request(app)
+        .post("/api/products")
+        .set({ ...authHeaders, "x-branch-id": branchId.toString() })
+        .send({
+          name: "Original Product",
+          price: 10,
+          category: categoryId,
+          unit_type: "unidad",
+        });
+
+      expect(createRes.status).toBe(201);
+
+      const productId = createRes.body.product._id;
+
+      bumpCacheVersion.mockRejectedValueOnce(
+        new Error("Simulated cache version failure"),
+      );
+
+      invalidateCache.mockRejectedValueOnce(
+        new Error("Simulated cache invalidation failure"),
+      );
+
+      const response = await request(app)
+        .put(`/api/products/${productId}`)
+        .set({ ...authHeaders, "x-branch-id": branchId.toString() })
+        .send({
+          name: "Updated Despite Cache Failure",
+          price: 20,
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.product.name).toBe("Updated Despite Cache Failure");
+
+      const persistedProduct = await Product.findOne({
+        _id: productId,
+        user: userId,
+      });
+
+      expect(persistedProduct).not.toBeNull();
+      expect(persistedProduct.name).toBe("Updated Despite Cache Failure");
+      expect(persistedProduct.price.toString()).toBe("20");
     });
 
     it("should return 400 if trying to update with non-existent category", async () => {

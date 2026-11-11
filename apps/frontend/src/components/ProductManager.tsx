@@ -38,24 +38,12 @@ interface ProductFormData {
   category: string;
   unit_type: 'unidad' | 'kg' | 'litro' | 'metro';
   barcode: string;
-  new_stock: string;
-  stock_reason: string;
 }
 
 const EMPTY_FORM: ProductFormData = {
   name: '', description: '', price: '', stock: '',
   category: '', unit_type: 'unidad', barcode: '',
-  new_stock: '', stock_reason: '',
 };
-
-const STOCK_REASONS = [
-  { value: 'initial_count', label: 'Inventario Inicial' },
-  { value: 'damaged', label: 'Dañado / Merma' },
-  { value: 'stolen', label: 'Extravío / Robo' },
-  { value: 'expired', label: 'Vencido' },
-  { value: 'correction', label: 'Corrección' },
-  { value: 'other', label: 'Otro motivo' },
-];
 
 const UNIT_OPTIONS = [
   { value: 'unidad', label: 'Unidad (ud)' },
@@ -346,8 +334,6 @@ const ProductManagerInner = () => {
       category: typeof product.category === 'object' && product.category ? product.category._id : String(product.category),
       unit_type: product.unit_type || 'unidad',
       barcode: product.barcode || '',
-      new_stock: '',
-      stock_reason: '',
     });
     setIsFormOpen(true);
   };
