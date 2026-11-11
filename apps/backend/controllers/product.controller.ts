@@ -184,7 +184,23 @@ export const createProduct = async (
         }
       }
 
-      res.status(201).json({ success: true, product });
+      const productResponse = {
+        ...product.toObject(),
+        branchInventories: [
+          {
+            _id: inventory._id,
+            product_id: inventory.product_id,
+            branch_id: inventory.branch_id,
+            stock: inventory.quantity,
+            min_stock: inventory.min_stock_alert,
+            createdAt: inventory.createdAt,
+            updatedAt: inventory.updatedAt,
+          },
+        ],
+        totalStock: inventory.quantity,
+      };
+
+      res.status(201).json({ success: true, product: productResponse });
     } catch (error) {
       if (session.inTransaction()) {
         await session.abortTransaction();
@@ -486,14 +502,7 @@ export const updateProduct = async (
 ): Promise<void> => {
   try {
     const { id } = req.params;
-    const {
-      name,
-      description,
-      price,
-      category,
-      unit_type,
-      barcode,
-    } = req.body;
+    const { name, description, price, category, unit_type, barcode } = req.body;
 
     // Capturar el barcode anterior para invalidar su caché si cambia.
     let oldBarcode: string | undefined;
@@ -573,20 +582,14 @@ export const updateProduct = async (
     }
 
     // La escritura ya fue confirmada. La invalidación es secundaria.
-    const keysToInvalidate = [
-      `product:${id}:${req.businessOwnerId}`,
-    ];
+    const keysToInvalidate = [`product:${id}:${req.businessOwnerId}`];
 
     if (oldBarcode) {
-      keysToInvalidate.push(
-        `barcode:${oldBarcode}:${req.businessOwnerId}`,
-      );
+      keysToInvalidate.push(`barcode:${oldBarcode}:${req.businessOwnerId}`);
     }
 
     if (barcode && barcode !== oldBarcode) {
-      keysToInvalidate.push(
-        `barcode:${barcode}:${req.businessOwnerId}`,
-      );
+      keysToInvalidate.push(`barcode:${barcode}:${req.businessOwnerId}`);
     }
 
     const cacheResults = await Promise.allSettled([
@@ -610,9 +613,7 @@ export const updateProduct = async (
     res.status(200).json({ success: true, product });
   } catch (error: unknown) {
     const message =
-      error instanceof Error
-        ? error.message
-        : "Error interno del servidor";
+      error instanceof Error ? error.message : "Error interno del servidor";
 
     getCurrentLogger().error(
       { err: error, productId: req.params.id },

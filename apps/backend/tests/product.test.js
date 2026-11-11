@@ -222,6 +222,16 @@ describe("Product Controllers Integration", () => {
       expect(response.status).toBe(201);
       expect(response.body.success).toBe(true);
 
+      expect(response.body.product.totalStock).toBe(initialStock);
+
+      expect(response.body.product.branchInventories).toHaveLength(1);
+
+      expect(response.body.product.branchInventories[0]).toMatchObject({
+        branch_id: branchId.toString(),
+        stock: initialStock,
+        min_stock: "0",
+      });
+
       const productId = response.body.product._id;
 
       const inventory = await Inventory.findOne({
