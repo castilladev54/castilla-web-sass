@@ -1,50 +1,78 @@
-import mongoose from 'mongoose';
-import { Request, Response } from 'express';
-import { Product } from '../models/Product.js';
-import { Category } from '../models/Category.js';
-import { Inventory } from '../models/Inventory.js';
-import { StockMovement, StockMovementType } from '../models/StockMovement.js';
-import { invalidateCache, getOrSetCache, getCacheVersion, bumpCacheVersion, buildPaginatedKey, getBranchCacheVersion } from '../lib/redis.js';
-import { createAdjustmentProcess } from '../services/adjustment.service.js';
-import { ProductId } from '../types/brands.js';
+import mongoose from "mongoose";
+import { Request, Response } from "express";
+import { Product } from "../models/Product.js";
+import { Category } from "../models/Category.js";
+import { Inventory } from "../models/Inventory.js";
+import { Branch } from "../models/Branch.js";
+import { StockMovement, StockMovementType } from "../models/StockMovement.js";
+import {
+  invalidateCache,
+  getOrSetCache,
+  getCacheVersion,
+  bumpCacheVersion,
+  buildPaginatedKey,
+  getBranchCacheVersion,
+  bumpBranchCacheVersion,
+} from "../lib/redis.js";
+import { createAdjustmentProcess } from "../services/adjustment.service.js";
+import { ProductId } from "../types/brands.js";
 import type {
   GetProductsResult,
   ProductFacetAggregationResult,
 } from "../types/aggregation.js";
+import { getCurrentLogger } from "../lib/logger.js";
 
-
-export const createProduct = async (req: Request, res: Response): Promise<void> => {
-  const { name, description, price, category, unit_type, barcode, initial_stock, branch_id } = req.body;
+export const createProduct = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  const {
+    name,
+    description,
+    price,
+    category,
+    unit_type,
+    barcode,
+    initial_stock,
+    branch_id,
+  } = req.body;
 
   try {
     // Verificar si la categoría existe y pertenece al usuario
-    const categoryExists = await Category.findOne({ _id: category, user: req.businessOwnerId });
+    const categoryExists = await Category.findOne({
+      _id: category,
+      user: req.businessOwnerId,
+    });
     if (!categoryExists) {
       res.status(400).json({
         success: false,
-        message: "La categoría especificada no existe"
+        message: "La categoría especificada no existe",
       });
       return;
     }
 
     // Si se envía barcode, verificar que no esté duplicado para este usuario
     if (barcode) {
-      const barcodeExists = await Product.findOne({ barcode, user: req.businessOwnerId });
+      const barcodeExists = await Product.findOne({
+        barcode,
+        user: req.businessOwnerId,
+      });
       if (barcodeExists) {
         res.status(400).json({
           success: false,
-          message: `El código de barras "${barcode}" ya está asignado al producto "${barcodeExists.name}"`
+          message: `El código de barras "${barcode}" ya está asignado al producto "${barcodeExists.name}"`,
         });
         return;
       }
     }
 
-    const hasInitialStock = initial_stock !== undefined && Number(initial_stock) > 0;
+    const hasInitialStock = initial_stock !== undefined;
 
     if (hasInitialStock && !branch_id) {
       res.status(400).json({
         success: false,
-        message: "Se requiere especificar la sucursal (branch_id) al inicializar el producto con stock."
+        message:
+          "Se requiere especificar la sucursal (branch_id) al inicializar el producto con stock.",
       });
       return;
     }
@@ -53,38 +81,73 @@ export const createProduct = async (req: Request, res: Response): Promise<void> 
       // Creación pura de catálogo — sin transacción, sin stock, sin BranchInventory.
       // El inventario se inicializa lazily mediante la primera venta, compra o ajuste (upsert).
       const product = new Product({
-        name, description, price,
-        category, unit_type,
+        name,
+        description,
+        price,
+        category,
+        unit_type,
         ...(barcode ? { barcode } : {}),
-        user: req.businessOwnerId
+        user: req.businessOwnerId,
       });
       await product.save();
-      await bumpCacheVersion('products', req.businessOwnerId);
+      try {
+        await bumpCacheVersion("products", req.businessOwnerId);
+      } catch (error) {
+        getCurrentLogger().error(
+          { err: error, productId: product._id },
+          "Product created, but cache invalidation failed",
+        );
+      }
+
       res.status(201).json({ success: true, product });
       return;
     }
 
     // Creación con stock inicial usando transacción
     const session = await mongoose.startSession();
-    session.startTransaction();
 
     try {
+      session.startTransaction();
+
+      const branch = await Branch.findOne({
+        _id: branch_id,
+        owner_id: req.businessOwnerId,
+        is_active: true,
+      }).session(session);
+
+      if (!branch) {
+        await session.abortTransaction();
+
+        res.status(404).json({
+          success: false,
+          message:
+            "La sucursal no existe, está inactiva o no pertenece a este negocio.",
+        });
+
+        return;
+      }
+
       const product = new Product({
-        name, description, price,
-        category, unit_type,
+        name,
+        description,
+        price,
+        category,
+        unit_type,
         ...(barcode ? { barcode } : {}),
-        user: req.businessOwnerId
+        user: req.businessOwnerId,
       });
       await product.save({ session });
 
-      const decimalQuantity = mongoose.Types.Decimal128.fromString(String(initial_stock));
+      const decimalQuantity = mongoose.Types.Decimal128.fromString(
+        String(initial_stock),
+      );
 
       const inventory = new Inventory({
         product_id: product._id,
         branch_id: branch_id,
         owner_id: req.businessOwnerId,
         quantity: decimalQuantity,
-        min_stock_alert: mongoose.Types.Decimal128.fromString('0')
+        min_stock_alert: mongoose.Types.Decimal128.fromString("0"),
       });
       await inventory.save({ session });
 
@@ -95,71 +158,115 @@ export const createProduct = async (req: Request, res: Response): Promise<void> 
         owner_id: req.businessOwnerId,
         type: StockMovementType.INITIAL_INVENTORY,
         quantity_change: decimalQuantity,
-        previous_quantity: mongoose.Types.Decimal128.fromString('0'),
+        previous_quantity: mongoose.Types.Decimal128.fromString("0"),
         new_quantity: decimalQuantity,
         created_by: req.actorId || req.businessOwnerId,
-        reason: 'Inventario inicial al crear el producto'
+        reason: "Inventario inicial al crear el producto",
       });
       await stockMovement.save({ session });
 
       await session.commitTransaction();
-      session.endSession();
 
-      await bumpCacheVersion('products', req.businessOwnerId);
+      const cacheResults = await Promise.allSettled([
+        bumpCacheVersion("products", req.businessOwnerId),
+        bumpBranchCacheVersion(
+          "products",
+          String(req.businessOwnerId),
+          String(branch_id),
+        ),
+        invalidateCache(`product:${product._id}:${req.businessOwnerId}`),
+      ]);
+
+      for (const result of cacheResults) {
+        if (result.status === "rejected") {
+          getCurrentLogger().error(
+            { err: result.reason, productId: product._id },
+            "Product created, but cache invalidation failed",
+          );
+        }
+      }
+
       res.status(201).json({ success: true, product });
-    } catch (innerError) {
-      await session.abortTransaction();
-      session.endSession();
-      throw innerError;
+    } catch (error) {
+      if (session.inTransaction()) {
+        await session.abortTransaction();
+      }
+
+      throw error;
+    } finally {
+      try {
+        await session.endSession();
+      } catch (error) {
+        getCurrentLogger().error(
+          { err: error },
+          "Failed to close MongoDB session after product creation",
+        );
+      }
     }
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Error interno del servidor';
+    const message =
+      error instanceof Error ? error.message : "Error interno del servidor";
     res.status(500).json({ success: false, message });
   }
 };
 
-export const getProducts = async (req: Request, res: Response): Promise<void> => {
+export const getProducts = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const ownerId = req.businessOwnerId;
     const branchId = req.branchId;
+    const ownerObjectId = new mongoose.Types.ObjectId(ownerId);
 
     // 1. Extracción y sanitización de paginación
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
-    const limit = Math.min(5000, Math.max(1, parseInt(req.query.limit as string) || 20));
+    const limit = Math.min(
+      5000,
+      Math.max(1, parseInt(req.query.limit as string) || 20),
+    );
     const skip = (page - 1) * limit;
 
     // Normalización de búsqueda
-    const normalizedSearch = (req.query.search as string || "").trim().toLowerCase();
-    const useCache = normalizedSearch.length === 0 || normalizedSearch.length >= 3;
+    const normalizedSearch = ((req.query.search as string) || "")
+      .trim()
+      .toLowerCase();
+    const useCache =
+      normalizedSearch.length === 0 || normalizedSearch.length >= 3;
     const ttl = normalizedSearch.length >= 3 ? 30 : 300;
 
     // 2. Validación estricta de ordenación (Whitelist)
-    const allowedSortFields = ['createdAt', 'name', 'price', 'totalStock'];
+    const allowedSortFields = ["createdAt", "name", "price", "totalStock"];
     const sortBy = allowedSortFields.includes(req.query.sortBy as string)
       ? (req.query.sortBy as string)
-      : 'createdAt';
-    const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+      : "createdAt";
+    const sortOrder = req.query.sortOrder === "asc" ? 1 : -1;
 
-    // 3. Llave de caché determinista con versión de sucursal (Lectura pasiva)
-    const version = useCache ? await getBranchCacheVersion('products', ownerId, branchId) : null;
+    // 3. Llave de caché determinista con versión global y de sucursal (Lectura pasiva)
+    const [globalVersion, branchVersion] = useCache
+      ? await Promise.all([
+          getCacheVersion("products", ownerId),
+          branchId
+            ? getBranchCacheVersion("products", ownerId, branchId)
+            : Promise.resolve(1),
+        ])
+      : [null, null];
+
     const searchSlug = normalizedSearch
       ? `:s${Buffer.from(normalizedSearch).toString("base64url")}`
       : "";
-    const hasDebtSlug = req.query.hasDebt === 'true' ? ':debt' : '';
+    const hasDebtSlug = req.query.hasDebt === "true" ? ":debt" : "";
     const cacheKey = useCache
-      ? `products:v${version}:${ownerId}:${branchId}:p${page}:l${limit}${searchSlug}${hasDebtSlug}:sort:${sortBy}:${sortOrder}`
+      ? `products:g${globalVersion}:b${branchVersion}:${ownerId}:${branchId ?? "catalog"}:p${page}:l${limit}${searchSlug}${hasDebtSlug}:sort:${sortBy}:${sortOrder}`
       : null;
 
     // Función de base de datos
     const fetchFromDB = async (): Promise<GetProductsResult> => {
       // Construcción del Match inicial
-      const matchStage: any = { user: new mongoose.Types.ObjectId(ownerId) };
+      const matchStage: any = { user: ownerObjectId };
       if (normalizedSearch) {
         const regex = new RegExp(normalizedSearch, "i");
-        matchStage.$or = [
-          { name: regex },
-          { barcode: regex }
-        ];
+        matchStage.$or = [{ name: regex }, { barcode: regex }];
       }
 
       const pipeline: mongoose.PipelineStage[] = [
@@ -167,10 +274,43 @@ export const getProducts = async (req: Request, res: Response): Promise<void> =>
         {
           $lookup: {
             from: "inventories",
-            localField: "_id",
-            foreignField: "product_id",
+            let: {
+              productId: "$_id",
+            },
+            pipeline: branchId
+              ? [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          { $eq: ["$product_id", "$$productId"] },
+                          { $eq: ["$branch_id", branchId] },
+                          { $eq: ["$owner_id", ownerObjectId] },
+                        ],
+                      },
+                    },
+                  },
+                  {
+                    $project: {
+                      _id: 1,
+                      product_id: 1,
+                      branch_id: 1,
+                      quantity: 1,
+                      min_stock_alert: 1,
+                      createdAt: 1,
+                      updatedAt: 1,
+                    },
+                  },
+                ]
+              : [
+                  {
+                    $match: {
+                      $expr: { $eq: ["$_id", null] },
+                    },
+                  },
+                ],
             as: "inventoryData",
-          }
+          },
         },
         {
           $addFields: {
@@ -212,17 +352,17 @@ export const getProducts = async (req: Request, res: Response): Promise<void> =>
                   createdAt: 1,
                   updatedAt: 1,
                   __v: 1,
-                }
+                },
               },
             ],
             as: "category",
-          }
+          },
         },
         {
           $unwind: {
             path: "$category",
             preserveNullAndEmptyArrays: true,
-          }
+          },
         },
         { $project: { inventoryData: 0 } },
         { $sort: { [sortBy]: sortOrder } },
@@ -233,8 +373,8 @@ export const getProducts = async (req: Request, res: Response): Promise<void> =>
           },
         },
       ];
-      const [result] = await Product.aggregate<ProductFacetAggregationResult>(pipeline);
-
+      const [result] =
+        await Product.aggregate<ProductFacetAggregationResult>(pipeline);
 
       const total = result?.metadata[0]?.total || 0;
       const products = result?.data || [];
@@ -243,7 +383,7 @@ export const getProducts = async (req: Request, res: Response): Promise<void> =>
         products,
         total,
         totalPages: Math.ceil(total / limit) || 1,
-        currentPage: page
+        currentPage: page,
       };
     };
 
@@ -263,7 +403,7 @@ export const getProducts = async (req: Request, res: Response): Promise<void> =>
         total: data.total,
         totalPages: data.totalPages,
         currentPage: page,
-        fromCache
+        fromCache,
       });
       return;
     }
@@ -274,89 +414,130 @@ export const getProducts = async (req: Request, res: Response): Promise<void> =>
       total: data.total,
       totalPages: data.totalPages,
       currentPage: data.currentPage,
-      fromCache
+      fromCache,
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Error interno del servidor';
+    const message =
+      error instanceof Error ? error.message : "Error interno del servidor";
     res.status(500).json({ success: false, message });
   }
 };
 
-export const getProductById = async (req: Request, res: Response): Promise<void> => {
+export const getProductById = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { id } = req.params;
     const cacheKey = `product:${id}:${req.businessOwnerId}`;
     const { data: product, fromCache } = await getOrSetCache(cacheKey, () =>
-      Product.findOne({ _id: id, user: req.businessOwnerId }).populate('category', 'name').lean()
+      Product.findOne({ _id: id, user: req.businessOwnerId })
+        .populate("category", "name")
+        .lean(),
     );
 
     if (!product) {
-      res.status(404).json({ success: false, message: "Producto no encontrado" });
+      res
+        .status(404)
+        .json({ success: false, message: "Producto no encontrado" });
       return;
     }
 
     res.status(200).json({ success: true, product, fromCache });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Error interno del servidor';
+    const message =
+      error instanceof Error ? error.message : "Error interno del servidor";
     res.status(500).json({ success: false, message });
   }
 };
 
 // ─── Buscar producto por código de barras ──────────────────────
-export const getProductByBarcode = async (req: Request, res: Response): Promise<void> => {
+export const getProductByBarcode = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { code } = req.params;
     const cacheKey = `barcode:${code}:${req.businessOwnerId}`;
 
     const { data: product, fromCache } = await getOrSetCache(cacheKey, () =>
       Product.findOne({ barcode: code, user: req.businessOwnerId })
-        .populate('category', 'name')
-        .lean()
+        .populate("category", "name")
+        .lean(),
     );
 
     if (!product) {
       res.status(404).json({
         success: false,
-        message: "No se encontró un producto con ese código de barras"
+        message: "No se encontró un producto con ese código de barras",
       });
       return;
     }
 
     res.status(200).json({ success: true, product, fromCache });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Error interno del servidor';
+    const message =
+      error instanceof Error ? error.message : "Error interno del servidor";
     res.status(500).json({ success: false, message });
   }
 };
 
-export const updateProduct = async (req: Request, res: Response): Promise<void> => {
+export const updateProduct = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { id } = req.params;
-    const { name, description, price, category, unit_type, barcode, new_stock, stock_reason, branch_id } = req.body;
+    const {
+      name,
+      description,
+      price,
+      category,
+      unit_type,
+      barcode,
+      new_stock,
+      stock_reason,
+      branch_id,
+    } = req.body;
 
     // ── 0. Capturar barcode actual SOLO si viene en la request ────────────────
     // Sin esto, la invalidación del caché de barcode viejo sería imposible.
     let oldBarcode;
     if (barcode !== undefined) {
-      const old = await Product.findOne({ _id: id, user: req.businessOwnerId }, 'barcode').lean();
+      const old = await Product.findOne(
+        { _id: id, user: req.businessOwnerId },
+        "barcode",
+      ).lean();
       oldBarcode = old?.barcode;
     }
 
     if (category) {
-      const categoryExists = await Category.findOne({ _id: category, user: req.businessOwnerId });
+      const categoryExists = await Category.findOne({
+        _id: category,
+        user: req.businessOwnerId,
+      });
       if (!categoryExists) {
-        res.status(400).json({ success: false, message: "La categoría especificada no existe" });
+        res
+          .status(400)
+          .json({
+            success: false,
+            message: "La categoría especificada no existe",
+          });
         return;
       }
     }
 
     // ── 2. Validar barcode duplicado si se envía ──────────────────────────────
     if (barcode) {
-      const barcodeExists = await Product.findOne({ barcode, user: req.businessOwnerId, _id: { $ne: id } });
+      const barcodeExists = await Product.findOne({
+        barcode,
+        user: req.businessOwnerId,
+        _id: { $ne: id },
+      });
       if (barcodeExists) {
         res.status(400).json({
           success: false,
-          message: `El código de barras "${barcode}" ya está asignado al producto "${barcodeExists.name}"`
+          message: `El código de barras "${barcode}" ya está asignado al producto "${barcodeExists.name}"`,
         });
         return;
       }
@@ -385,21 +566,25 @@ export const updateProduct = async (req: Request, res: Response): Promise<void> 
       const product = await Product.findOneAndUpdate(
         { _id: id, user: req.businessOwnerId },
         updateData,
-        { returnDocument: 'after', runValidators: true }
-      ).populate('category', 'name');
+        { returnDocument: "after", runValidators: true },
+      ).populate("category", "name");
 
       if (!product) {
-        res.status(404).json({ success: false, message: "Producto no encontrado" });
+        res
+          .status(404)
+          .json({ success: false, message: "Producto no encontrado" });
         return;
       }
 
       // Invalidar caché paginada (bump de versión) + claves individuales
       const keysToInvalidate = [`product:${id}:${req.businessOwnerId}`];
-      if (oldBarcode) keysToInvalidate.push(`barcode:${oldBarcode}:${req.businessOwnerId}`);
-      if (barcode && barcode !== oldBarcode) keysToInvalidate.push(`barcode:${barcode}:${req.businessOwnerId}`);
+      if (oldBarcode)
+        keysToInvalidate.push(`barcode:${oldBarcode}:${req.businessOwnerId}`);
+      if (barcode && barcode !== oldBarcode)
+        keysToInvalidate.push(`barcode:${barcode}:${req.businessOwnerId}`);
       await Promise.all([
-        bumpCacheVersion('products', req.businessOwnerId),
-        invalidateCache(...keysToInvalidate)
+        bumpCacheVersion("products", req.businessOwnerId),
+        invalidateCache(...keysToInvalidate),
       ]);
 
       res.status(200).json({ success: true, product });
@@ -411,7 +596,8 @@ export const updateProduct = async (req: Request, res: Response): Promise<void> 
     if (!branchId) {
       res.status(400).json({
         success: false,
-        message: "Contexto de sucursal no válido o no autorizado para realizar un ajuste de stock."
+        message:
+          "Contexto de sucursal no válido o no autorizado para realizar un ajuste de stock.",
       });
       return;
     }
@@ -427,13 +613,15 @@ export const updateProduct = async (req: Request, res: Response): Promise<void> 
       const product = await Product.findOneAndUpdate(
         { _id: id, user: req.businessOwnerId },
         updateData,
-        { returnDocument: 'after', runValidators: true, session }
-      ).populate('category', 'name');
+        { returnDocument: "after", runValidators: true, session },
+      ).populate("category", "name");
 
       if (!product) {
         await session.abortTransaction();
         session.endSession();
-        res.status(404).json({ success: false, message: "Producto no encontrado" });
+        res
+          .status(404)
+          .json({ success: false, message: "Producto no encontrado" });
         return;
       }
 
@@ -445,8 +633,8 @@ export const updateProduct = async (req: Request, res: Response): Promise<void> 
         id as unknown as ProductId,
         new_stock,
         stock_reason,
-        'Corrección desde edición de producto',
-        session
+        "Corrección desde edición de producto",
+        session,
       );
 
       // 4b.3 Commit único: metadata + stock + Kardex son atómicos
@@ -458,21 +646,22 @@ export const updateProduct = async (req: Request, res: Response): Promise<void> 
         `product:${id}:${req.businessOwnerId}`,
         `adjustments:${req.businessOwnerId}`,
       ];
-      if (oldBarcode) keysToInvalidate.push(`barcode:${oldBarcode}:${req.businessOwnerId}`);
-      if (barcode && barcode !== oldBarcode) keysToInvalidate.push(`barcode:${barcode}:${req.businessOwnerId}`);
+      if (oldBarcode)
+        keysToInvalidate.push(`barcode:${oldBarcode}:${req.businessOwnerId}`);
+      if (barcode && barcode !== oldBarcode)
+        keysToInvalidate.push(`barcode:${barcode}:${req.businessOwnerId}`);
       await Promise.all([
-        bumpCacheVersion('products', req.businessOwnerId),
-        invalidateCache(...keysToInvalidate)
+        bumpCacheVersion("products", req.businessOwnerId),
+        invalidateCache(...keysToInvalidate),
       ]);
 
       res.status(200).json({
         success: true,
         product,
         stockAdjusted: true,
-        message: `Producto actualizado. Stock ajustado a ${new_stock} en la sucursal.`
+        message: `Producto actualizado. Stock ajustado a ${new_stock} en la sucursal.`,
       });
       return;
-
     } catch (innerError) {
       if (session.inTransaction()) {
         await session.abortTransaction();
@@ -480,38 +669,51 @@ export const updateProduct = async (req: Request, res: Response): Promise<void> 
       session.endSession();
       throw innerError;
     }
-
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Error interno del servidor';
-    console.error('updateProduct error:', message);
-    const status = message.includes('igual al stock actual') ? 400 : 500;
+    const message =
+      error instanceof Error ? error.message : "Error interno del servidor";
+    console.error("updateProduct error:", message);
+    const status = message.includes("igual al stock actual") ? 400 : 500;
     res.status(status).json({ success: false, message });
   }
 };
 
-export const deleteProduct = async (req: Request, res: Response): Promise<void> => {
+export const deleteProduct = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { id } = req.params;
-    const product = await Product.findOneAndDelete({ _id: id, user: req.businessOwnerId });
+    const product = await Product.findOneAndDelete({
+      _id: id,
+      user: req.businessOwnerId,
+    });
 
     if (!product) {
-      res.status(404).json({ success: false, message: "Producto no encontrado" });
+      res
+        .status(404)
+        .json({ success: false, message: "Producto no encontrado" });
       return;
     }
 
     // Invalidar caché paginada (bump de versión) + claves individuales
     const keysToInvalidate = [`product:${id}:${req.businessOwnerId}`];
     if (product.barcode) {
-      keysToInvalidate.push(`barcode:${product.barcode}:${req.businessOwnerId}`);
+      keysToInvalidate.push(
+        `barcode:${product.barcode}:${req.businessOwnerId}`,
+      );
     }
     await Promise.all([
-      bumpCacheVersion('products', req.businessOwnerId),
-      invalidateCache(...keysToInvalidate)
+      bumpCacheVersion("products", req.businessOwnerId),
+      invalidateCache(...keysToInvalidate),
     ]);
 
-    res.status(200).json({ success: true, message: "Producto eliminado correctamente" });
+    res
+      .status(200)
+      .json({ success: true, message: "Producto eliminado correctamente" });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Error interno del servidor';
+    const message =
+      error instanceof Error ? error.message : "Error interno del servidor";
     res.status(500).json({ success: false, message });
   }
 };
