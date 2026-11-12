@@ -133,15 +133,39 @@ export default function ReceivablesManager() {
 
     // Validación de formato. El backend sigue siendo responsable
     // de validar el importe, el saldo y las reglas financieras.
-    const normalizedAmount = amountReceived.trim();
+    const rawAmount = amountReceived.trim();
+    let normalizedAmount = rawAmount;
 
-    if (
-      !/^\d+(\.\d{1,2})?$/.test(normalizedAmount) ||
-      !/[1-9]/.test(normalizedAmount)
-    ) {
-      setPaymentError(
-        'Ingresa un importe mayor que cero con máximo dos decimales.',
-      );
+    if (currency === 'VES') {
+      // Formato venezolano: 10,50 | 1.234,56 | 1.234.567,89
+      const venezuelanFormat = /^\d{1,3}(?:\.\d{3})*,\d{2}$/;
+
+      if (!venezuelanFormat.test(rawAmount)) {
+        setPaymentError(
+          'Ingresa un importe en formato venezolano. Ejemplo: 10.123,56.',
+        );
+        return;
+      }
+
+      // Convertir a formato decimal canónico para el backend.
+      normalizedAmount = rawAmount
+        .replace(/\./g, '')
+        .replace(',', '.');
+    } else {
+      // USD conserva exactamente la validación anterior.
+      if (
+        !/^\d+(\.\d{1,2})?$/.test(rawAmount) ||
+        !/[1-9]/.test(rawAmount)
+      ) {
+        setPaymentError(
+          'Ingresa un importe mayor que cero con máximo dos decimales.',
+        );
+        return;
+      }
+    }
+
+    if (!/[1-9]/.test(normalizedAmount)) {
+      setPaymentError('El importe debe ser mayor que cero.');
       return;
     }
 
@@ -407,7 +431,7 @@ export default function ReceivablesManager() {
                 onChange={(event) =>
                   setAmountReceived(event.target.value)
                 }
-                placeholder="0.00"
+                placeholder={currency === 'VES' ? '0,00' : '0.00'}
                 disabled={isPaymentPending}
                 className="w-full rounded-lg bg-white/5 border border-white/10 px-4 py-3 text-white outline-none focus:border-orange-400 disabled:opacity-50"
               />

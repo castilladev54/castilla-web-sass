@@ -281,7 +281,7 @@ describe('ReceivablesManager', () => {
     );
 
     fireEvent.change(screen.getByLabelText('Importe recibido'), {
-      target: { value: '100.00' },
+      target: { value: '100,00' },
     });
 
     fireEvent.change(screen.getByLabelText('Moneda recibida'), {
@@ -300,5 +300,87 @@ describe('ReceivablesManager', () => {
 
     expect(mockRateRefetch).toHaveBeenCalledTimes(1);
     expect(mockMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('rechaza un importe con formato inválido para VES', async () => {
+    render(<ReceivablesManager />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Registrar abono' }),
+    );
+
+    fireEvent.change(screen.getByLabelText('Moneda recibida'), {
+      target: { value: 'VES' },
+    });
+
+    fireEvent.change(screen.getByLabelText('Importe recibido'), {
+      target: { value: '100.00' },
+    });
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Confirmar abono' }),
+    );
+
+    expect(
+      await screen.findByText(
+        'Ingresa un importe en formato venezolano. Ejemplo: 10.123,56.',
+      ),
+    ).not.toBeNull();
+
+    expect(mockMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('registra correctamente un abono en VES convirtiendo formato venezolano a canónico', async () => {
+    mockMutateAsync.mockResolvedValueOnce({
+      success: true,
+    });
+
+    const mockRateRefetch = vi.fn().mockResolvedValue({
+      data: {
+        rate: '450.00',
+        is_manual_override: true,
+      },
+      error: null,
+    });
+
+    vi.mocked(useExchangeRateQuery).mockReturnValue({
+      refetch: mockRateRefetch,
+    } as unknown as ReturnType<typeof useExchangeRateQuery>);
+
+    render(<ReceivablesManager />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Registrar abono' }),
+    );
+
+    fireEvent.change(screen.getByLabelText('Moneda recibida'), {
+      target: { value: 'VES' },
+    });
+
+    expect(screen.getByPlaceholderText('0,00')).not.toBeNull();
+
+    fireEvent.change(screen.getByLabelText('Importe recibido'), {
+      target: { value: '10.123,56' },
+    });
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Confirmar abono' }),
+    );
+
+    await waitFor(() => {
+      expect(mockMutateAsync).toHaveBeenCalledTimes(1);
+    });
+
+    const payload = mockMutateAsync.mock.calls[0]?.[0];
+
+    expect(payload).toEqual({
+      saleId: sale._id,
+      amountReceived: '10123.56',
+      currency: 'VES',
+      paymentMethod: 'Efectivo',
+      exchangeRate: '450.00',
+      exchangeRateType: 'COMERCIAL',
+      idempotencyKey: expect.any(String),
+    });
   });
 });
