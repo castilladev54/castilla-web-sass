@@ -60,13 +60,22 @@ describe('useCreateStockTransfer', () => {
 
     const { result } = renderHook(() => useCreateStockTransfer(), { wrapper });
 
-    result.current.mutate(payload);
+    const idempotencyKey = 'transfer-test-001';
+
+    result.current.mutate({
+      payload,
+      idempotencyKey,
+    });
 
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    expect(API.post).toHaveBeenCalledWith('/transfers', payload);
+    expect(API.post).toHaveBeenCalledWith('/transfers', payload, {
+      headers: {
+        'x-idempotency-key': idempotencyKey,
+      },
+    });
     expect(result.current.data).toEqual(mockResponse.data);
 
     expect(invalidateSpy).toHaveBeenCalledWith({
@@ -109,10 +118,21 @@ describe('useCreateStockTransfer', () => {
 
     const { result } = renderHook(() => useCreateStockTransfer(), { wrapper });
 
-    result.current.mutate(payload);
+    const idempotencyKey = 'transfer-test-002';
+
+    result.current.mutate({
+      payload,
+      idempotencyKey,
+    });
 
     await waitFor(() => {
       expect(result.current.isError).toBe(true);
+    });
+
+    expect(API.post).toHaveBeenCalledWith('/transfers', payload, {
+      headers: {
+        'x-idempotency-key': idempotencyKey,
+      },
     });
 
     expect(invalidateSpy).not.toHaveBeenCalled();

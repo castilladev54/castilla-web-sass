@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { ArrowRight, Package, Trash2, X, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -25,6 +25,7 @@ export default function CreateStockTransferModal({
   const [sourceBranchId, setSourceBranchId] = useState<BranchId | null>(null);
   const [destinationBranchId, setDestinationBranchId] = useState<BranchId | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [transferOutcomeUnknown, setTransferOutcomeUnknown] = useState(false);
   
   // Estado para la fila intermedia (UX)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -38,6 +39,13 @@ export default function CreateStockTransferModal({
   } = useTransferProductsQuery(sourceBranchId);
 
   const createTransfer = useCreateStockTransfer();
+
+  const idempotencyKeyRef = useRef<{
+    fingerprint: string;
+    key: string;
+  } | null>(null);
+
+  const transferInFlightRef = useRef(false);
 
   const {
     cart,
@@ -81,14 +89,23 @@ export default function CreateStockTransferModal({
     setSearchTerm('');
   };
 
-  const handleClose = () => {
+  const resetAndClose = () => {
+    idempotencyKeyRef.current = null;
+
     clear();
     setSearchTerm('');
     setSelectedProduct(null);
     setQuantityInput('');
     setSourceBranchId(null);
     setDestinationBranchId(null);
+
     onClose();
+  };
+
+  const handleClose = () => {
+    if (transferInFlightRef.current || transferOutcomeUnknown) return;
+
+    resetAndClose();
   };
 
   const handleSelectProduct = (product: Product) => {
@@ -110,7 +127,12 @@ export default function CreateStockTransferModal({
   };
 
   const handleTransfer = async () => {
-    if (!sourceBranchId || !destinationBranchId || cart.length === 0) {
+    if (
+      transferInFlightRef.current ||
+      !sourceBranchId ||
+      !destinationBranchId ||
+      cart.length === 0
+    ) {
       return;
     }
 
@@ -123,12 +145,56 @@ export default function CreateStockTransferModal({
       })),
     };
 
+    // El orden de los productos no debe cambiar la identidad
+    // de una misma operación.
+    const fingerprint = JSON.stringify({
+      sourceBranchId,
+      destinationBranchId,
+      items: [...payload.items].sort((a, b) =>
+        a.product_id.localeCompare(b.product_id)
+      ),
+    });
+
+    if (
+      !idempotencyKeyRef.current ||
+      idempotencyKeyRef.current.fingerprint !== fingerprint
+    ) {
+      idempotencyKeyRef.current = {
+        fingerprint,
+        key: crypto.randomUUID(),
+      };
+    }
+
+    transferInFlightRef.current = true;
+
     try {
-      await createTransfer.mutateAsync(payload);
+      await createTransfer.mutateAsync({
+        payload,
+        idempotencyKey: idempotencyKeyRef.current.key,
+      });
+
+      setTransferOutcomeUnknown(false);
+
       toast.success('Transferencia creada exitosamente');
-      handleClose();
+
+      resetAndClose();
     } catch (error: any) {
-      toast.error(error?.response?.data?.message || error.message || 'Error al procesar transferencia');
+      const status = error?.response?.status;
+
+      // Sin respuesta o con error 5xx:
+      // no sabemos si el backend confirmó la transacción.
+      if (!error?.response || status >= 500) {
+        setTransferOutcomeUnknown(true);
+      }
+
+      toast.error(
+        error?.response?.data?.error ||
+        error?.response?.data?.message ||
+        error.message ||
+        'Error al procesar transferencia'
+      );
+    } finally {
+      transferInFlightRef.current = false;
     }
   };
 
@@ -140,7 +206,13 @@ export default function CreateStockTransferModal({
       icon={<Package className="text-orange-500" size={22} />}
       className="max-w-4xl max-h-[90vh] overflow-y-auto"
     >
-      <div className="space-y-5">
+      <div
+        className={`space-y-5 ${
+          createTransfer.isPending || transferOutcomeUnknown
+            ? 'pointer-events-none'
+            : ''
+        }`}
+      >
         {/* Sucursales */}
         <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-3 items-end">
           <div>
@@ -379,12 +451,31 @@ export default function CreateStockTransferModal({
           </div>
         )}
 
+        {transferOutcomeUnknown && (
+          <div className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 p-4">
+            <p className="text-sm font-medium text-yellow-300">
+              No se pudo confirmar el resultado de la transferencia.
+            </p>
+            <p className="mt-1 text-sm text-gray-300">
+              No cierres este formulario ni modifiques los productos.
+              Reintenta para recuperar el resultado de la operación original.
+            </p>
+          </div>
+        )}
+
         {/* Acciones */}
-        <div className="flex justify-end gap-3 pt-2 border-t border-white/10">
+        <div
+          className={`flex justify-end gap-3 pt-2 border-t border-white/10 ${
+            transferOutcomeUnknown && !createTransfer.isPending
+              ? 'pointer-events-auto'
+              : ''
+          }`}
+        >
           <button
             type="button"
+            disabled={transferOutcomeUnknown || createTransfer.isPending}
             onClick={handleClose}
-            className="h-11 px-5 rounded-xl border border-white/10 text-gray-300 hover:bg-white/5 transition"
+            className="h-11 px-5 rounded-xl border border-white/10 text-gray-300 hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition"
           >
             Cancelar
           </button>
@@ -401,7 +492,11 @@ export default function CreateStockTransferModal({
             onClick={() => void handleTransfer()}
             className="h-11 px-5 rounded-xl bg-orange-500 text-white font-medium hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed transition"
           >
-            {createTransfer.isPending ? 'Transfiriendo...' : 'Transferir'}
+            {createTransfer.isPending
+              ? 'Transfiriendo...'
+              : transferOutcomeUnknown
+                ? 'Reintentar transferencia'
+                : 'Transferir'}
           </button>
         </div>
       </div>

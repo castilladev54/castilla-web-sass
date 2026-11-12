@@ -40,38 +40,44 @@ export function useStockTransfersQuery(branchId: BranchId | null) {
   });
 }
 
+export interface CreateStockTransferVariables {
+  payload: CreateStockTransferDTO;
+  idempotencyKey: string;
+}
+
 /** Crea una nueva transferencia de stock */
 export function useCreateStockTransfer() {
   const qc = useQueryClient();
 
   return useMutation<
-    any, // TODO: ApiStockTransferResponse
+    any,
     Error,
-    CreateStockTransferDTO
+    CreateStockTransferVariables
   >({
-    mutationFn: async (payload) => {
-      const res = await api.post('/transfers', payload);
+    mutationFn: async ({ payload, idempotencyKey }) => {
+      const res = await api.post('/transfers', payload, {
+        headers: {
+          'x-idempotency-key': idempotencyKey,
+        },
+      });
+
       return res.data;
     },
-    onSuccess: async (_data, payload) => {
+
+    onSuccess: async (_data, { payload }) => {
       await Promise.all([
-        // Catálogo de transferencias
         qc.invalidateQueries({
           queryKey: transferProductKeys.byBranch(payload.sourceBranchId),
         }),
         qc.invalidateQueries({
           queryKey: transferProductKeys.byBranch(payload.destinationBranchId),
         }),
-
-        // Productos / stock
         qc.invalidateQueries({
           queryKey: productKeys.all(payload.sourceBranchId),
         }),
         qc.invalidateQueries({
           queryKey: productKeys.all(payload.destinationBranchId),
         }),
-
-        // Historial de transferencias
         qc.invalidateQueries({
           queryKey: stockTransferKeys.list(payload.sourceBranchId),
         }),
