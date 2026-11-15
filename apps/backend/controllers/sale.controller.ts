@@ -222,8 +222,8 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
     let dateTo = req.query.dateTo as string | null;
     let dateFilterParam = req.query.dateFilter as string | undefined; // today | 7days | 30days | month | custom | all
 
-    // Restricciones para el empleado: solo ventas del día de hoy
-    if (isEmployee) {
+    // Restricciones para el empleado: solo ventas del día de hoy (excepto en cuentas por cobrar)
+    if (isEmployee && isCreditSaleQuery !== "true") {
       dateFilterParam = "today";
       dateFrom = null;
       dateTo = null;
