@@ -7,6 +7,7 @@ import { Inventory } from "../models/Inventory.js";
 import { StockMovement, StockMovementType } from "../models/StockMovement.js";
 import { Branch } from "../models/Branch.js";
 import { Customer } from "../models/Customer.js";
+import { CustomerPayment } from "../models/CustomerPayment.js";
 import {
   BusinessOwnerId,
   ActorId,
@@ -16,10 +17,7 @@ import {
 } from "../types/brands.js";
 import type { PaymentMethod } from "@inventory/shared";
 import { bumpBranchCacheVersion } from "../lib/redis.js";
-import {
-  InsufficientStockError,
-  InvalidCustomerError,
-} from "../lib/error.js";
+import { InsufficientStockError, InvalidCustomerError } from "../lib/error.js";
 // ─── DTOs ────────────────────────────────────────────────────────────────────
 
 export interface SaleItemInput {
@@ -87,7 +85,9 @@ export const createSaleProcess = async (
 
   // 0.6 Validar que si la venta es a crédito / pendiente, requiera un cliente
   if (status === "pending" && !customerId) {
-    throw new Error("Una venta pendiente o a crédito requiere asociar un cliente.");
+    throw new Error(
+      "Una venta pendiente o a crédito requiere asociar un cliente.",
+    );
   }
 
   let total_amount = "0";
@@ -254,7 +254,9 @@ export const fetchSales = async (
   businessOwnerId: BusinessOwnerId,
   sellerId: ActorId | null = null,
 ) => {
-  const filter: Record<string, unknown> = { business_owner_id: businessOwnerId };
+  const filter: Record<string, unknown> = {
+    business_owner_id: businessOwnerId,
+  };
   if (sellerId) filter.sold_by = sellerId;
 
   return Sale.find(filter)
@@ -325,186 +327,186 @@ export const updateSaleProcess = async (
   // La sucursal de una venta es inmutable.
   const effectiveBranchId = sale.branch_id as BranchId;
 
-    // Validar que la sucursal de destino existe y pertenece al negocio
-    const branch = await Branch.findOne({
-      _id: effectiveBranchId,
-      owner_id: ownerId,
-    }).session(session);
+  // Validar que la sucursal de destino existe y pertenece al negocio
+  const branch = await Branch.findOne({
+    _id: effectiveBranchId,
+    owner_id: ownerId,
+  }).session(session);
 
-    if (!branch) {
-      throw new Error(
-        "La sucursal de destino no existe o no pertenece a tu negocio.",
+  if (!branch) {
+    throw new Error(
+      "La sucursal de destino no existe o no pertenece a tu negocio.",
+    );
+  }
+
+  if (items && items.length > 0) {
+    // 1. Restaurar stock original en Inventory (usando upsert por seguridad si el registro fue borrado)
+    const originalDetails = await SaleDetail.find({
+      sale_id: saleId,
+    }).session(session);
+    for (const detail of originalDetails) {
+      await Inventory.findOneAndUpdate(
+        {
+          branch_id: effectiveBranchId,
+          product_id: detail.product_id,
+          owner_id: ownerId,
+        },
+        { $inc: { quantity: detail.quantity } },
+        { session, upsert: true },
       );
     }
 
-    if (items && items.length > 0) {
-      // 1. Restaurar stock original en Inventory (usando upsert por seguridad si el registro fue borrado)
-      const originalDetails = await SaleDetail.find({
-        sale_id: saleId,
+    // 2. Verificar existencia de los NUEVOS productos y computar total
+    const newProductIds = items.map((i) => i.product_id);
+    const products = await Product.find({
+      _id: { $in: newProductIds },
+      user: ownerId,
+    })
+      .populate("category", "max_debt_limit")
+      .session(session);
+    const productsMap = new Map(products.map((p) => [p._id.toString(), p]));
+
+    let newTotal = "0";
+    for (const item of items) {
+      const product = productsMap.get(item.product_id.toString());
+      if (!product)
+        throw new Error(
+          `Producto con ID ${item.product_id} no encontrado o no te pertenece.`,
+        );
+
+      // Fase 8: Backend Domain Validation
+      const qty = Big(item.quantity);
+
+      console.log("🔥 SALE DOMAIN VALIDATION", {
+        productId: item.product_id,
+        quantity: item.quantity,
+        unitType: product.unit_type,
+      });
+
+      if (qty.lte(0)) {
+        throw new Error(
+          `La cantidad para el producto ${product.name} debe ser mayor a cero.`,
+        );
+      }
+      if (product.unit_type === "unidad") {
+        if (!qty.eq(qty.round(0, 0))) {
+          throw new Error(
+            `El producto ${product.name} se vende por unidades y no acepta decimales.`,
+          );
+        }
+      }
+
+      const lineTotal = qty.times(Big(item.unit_price));
+      newTotal = Big(newTotal).plus(lineTotal).toString();
+    }
+
+    // 3. Decrementar stock en Inventory — mutación atómica con filtro $gte.
+    for (const item of items) {
+      const product = productsMap.get(item.product_id.toString())!;
+      const qtyDecimal = mongoose.Types.Decimal128.fromString(item.quantity);
+      const negQtyDecimal = mongoose.Types.Decimal128.fromString(
+        Big(item.quantity).times(-1).toString(),
+      );
+
+      // TODO: Ajustar según tu regla de dominio real
+      const allowNegativeStock = true;
+
+      const preInventory = await Inventory.findOne({
+        branch_id: effectiveBranchId,
+        product_id: item.product_id,
+        owner_id: ownerId,
       }).session(session);
-      for (const detail of originalDetails) {
-        await Inventory.findOneAndUpdate(
-          {
-            branch_id: effectiveBranchId,
-            product_id: detail.product_id,
-            owner_id: ownerId,
-          },
-          { $inc: { quantity: detail.quantity } },
-          { session, upsert: true },
-        );
-      }
+      const previousQuantity =
+        preInventory?.quantity ?? mongoose.Types.Decimal128.fromString("0");
 
-      // 2. Verificar existencia de los NUEVOS productos y computar total
-      const newProductIds = items.map((i) => i.product_id);
-      const products = await Product.find({
-        _id: { $in: newProductIds },
-        user: ownerId,
-      })
-        .populate("category", "max_debt_limit")
-        .session(session);
-      const productsMap = new Map(products.map((p) => [p._id.toString(), p]));
-
-      let newTotal = "0";
-      for (const item of items) {
-        const product = productsMap.get(item.product_id.toString());
-        if (!product)
-          throw new Error(
-            `Producto con ID ${item.product_id} no encontrado o no te pertenece.`,
-          );
-
-        // Fase 8: Backend Domain Validation
-        const qty = Big(item.quantity);
-
-        console.log("🔥 SALE DOMAIN VALIDATION", {
-          productId: item.product_id,
-          quantity: item.quantity,
-          unitType: product.unit_type,
-        });
-
-        if (qty.lte(0)) {
-          throw new Error(
-            `La cantidad para el producto ${product.name} debe ser mayor a cero.`,
-          );
-        }
-        if (product.unit_type === "unidad") {
-          if (!qty.eq(qty.round(0, 0))) {
-            throw new Error(
-              `El producto ${product.name} se vende por unidades y no acepta decimales.`,
-            );
-          }
-        }
-
-        const lineTotal = qty.times(Big(item.unit_price));
-        newTotal = Big(newTotal).plus(lineTotal).toString();
-      }
-
-      // 3. Decrementar stock en Inventory — mutación atómica con filtro $gte.
-      for (const item of items) {
-        const product = productsMap.get(item.product_id.toString())!;
-        const qtyDecimal = mongoose.Types.Decimal128.fromString(item.quantity);
-        const negQtyDecimal = mongoose.Types.Decimal128.fromString(
-          Big(item.quantity).times(-1).toString(),
-        );
-
-        // TODO: Ajustar según tu regla de dominio real
-        const allowNegativeStock = true;
-
-        const preInventory = await Inventory.findOne({
+      let result = await Inventory.findOneAndUpdate(
+        {
           branch_id: effectiveBranchId,
           product_id: item.product_id,
           owner_id: ownerId,
-        }).session(session);
-        const previousQuantity =
-          preInventory?.quantity ?? mongoose.Types.Decimal128.fromString("0");
+          quantity: { $gte: qtyDecimal },
+        },
+        { $inc: { quantity: negQtyDecimal } },
+        { session, returnDocument: "after" },
+      );
 
-        let result = await Inventory.findOneAndUpdate(
+      if (!result) {
+        if (!allowNegativeStock) {
+          throw new InsufficientStockError(
+            product.name,
+            item.product_id.toString(),
+          );
+        }
+
+        // Stock insuficiente, pero se permiten cantidades negativas.
+        // IMPORTANTE: no usar upsert.
+        result = await Inventory.findOneAndUpdate(
           {
             branch_id: effectiveBranchId,
             product_id: item.product_id,
             owner_id: ownerId,
-            quantity: { $gte: qtyDecimal },
           },
           { $inc: { quantity: negQtyDecimal } },
           { session, returnDocument: "after" },
         );
 
+        // No existe Inventory para ese producto/sucursal.
         if (!result) {
-          if (!allowNegativeStock) {
-            throw new InsufficientStockError(
-              product.name,
-              item.product_id.toString(),
-            );
-          }
-
-          // Stock insuficiente, pero se permiten cantidades negativas.
-          // IMPORTANTE: no usar upsert.
-          result = await Inventory.findOneAndUpdate(
-            {
-              branch_id: effectiveBranchId,
-              product_id: item.product_id,
-              owner_id: ownerId,
-            },
-            { $inc: { quantity: negQtyDecimal } },
-            { session, returnDocument: "after" },
+          throw new InsufficientStockError(
+            product.name,
+            item.product_id.toString(),
           );
-
-          // No existe Inventory para ese producto/sucursal.
-          if (!result) {
-            throw new InsufficientStockError(
-              product.name,
-              item.product_id.toString(),
-            );
-          }
         }
+      }
 
-        if (!result)
-          throw new Error(
-            "Error al actualizar inventario en la edición de venta",
-          );
-        // Registrar movimiento de stock (event sourcing)
-        await StockMovement.create(
-          [
-            {
-              inventory_id: result._id,
-              product_id: item.product_id,
-              branch_id: effectiveBranchId,
-              owner_id: ownerId,
-              type: StockMovementType.SALE,
-              quantity_change: negQtyDecimal,
-              previous_quantity: previousQuantity,
-              new_quantity: result.quantity,
-              reference_id: undefined,
-              created_by: ownerId,
-            },
-          ],
-          { session },
+      if (!result)
+        throw new Error(
+          "Error al actualizar inventario en la edición de venta",
         );
-      }
-
-      // 4. Reemplazar SaleDetail
-      await SaleDetail.deleteMany({ sale_id: saleId }, { session });
-      for (const item of items) {
-        const detail = new SaleDetail({
-          sale_id: saleId,
-          product_id: item.product_id,
-          quantity: item.quantity,
-          unit_price: item.unit_price,
-        });
-        await detail.save({ session });
-      }
-
-      sale.total_amount = newTotal as any;
+      // Registrar movimiento de stock (event sourcing)
+      await StockMovement.create(
+        [
+          {
+            inventory_id: result._id,
+            product_id: item.product_id,
+            branch_id: effectiveBranchId,
+            owner_id: ownerId,
+            type: StockMovementType.SALE,
+            quantity_change: negQtyDecimal,
+            previous_quantity: previousQuantity,
+            new_quantity: result.quantity,
+            reference_id: undefined,
+            created_by: ownerId,
+          },
+        ],
+        { session },
+      );
     }
 
-    if (payment_method !== undefined) {
-      sale.payment_method = (
-        payment_method === "Pago Móvil" ? "Pago Movil" : payment_method
-      ) as any;
+    // 4. Reemplazar SaleDetail
+    await SaleDetail.deleteMany({ sale_id: saleId }, { session });
+    for (const item of items) {
+      const detail = new SaleDetail({
+        sale_id: saleId,
+        product_id: item.product_id,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+      });
+      await detail.save({ session });
     }
 
-    if (status !== undefined) {
-      sale.status = status;
-    }
+    sale.total_amount = newTotal as any;
+  }
+
+  if (payment_method !== undefined) {
+    sale.payment_method = (
+      payment_method === "Pago Móvil" ? "Pago Movil" : payment_method
+    ) as any;
+  }
+
+  if (status !== undefined) {
+    sale.status = status;
+  }
 
   await sale.save({ session });
 
@@ -534,6 +536,34 @@ export const cancelSaleProcess = async (
     if (sale.status === "cancelled")
       throw new Error("La venta ya ha sido anulada anteriormente.");
 
+    // Serializar la anulación frente al registro concurrente de abonos.
+    const lockResult = await Sale.updateOne(
+      {
+        _id: sale._id,
+        business_owner_id: ownerId,
+      },
+      {
+        $inc: { __v: 1 },
+      },
+      { session },
+    );
+
+    if (lockResult.matchedCount !== 1) {
+      throw new Error("No se pudo bloquear la venta para su anulación.");
+    }
+
+    // No se permite anular ventas con abonos registrados.
+    const existingPayment = await CustomerPayment.exists({
+      sale_id: sale._id,
+      business_owner_id: ownerId,
+    }).session(session);
+
+    if (existingPayment) {
+      throw new Error(
+        "No se puede anular una venta que tiene abonos registrados.",
+      );
+    }
+
     const effectiveBranchId = sale.branch_id as BranchId;
 
     // Validar que la sucursal original existe y pertenece al negocio
@@ -552,15 +582,20 @@ export const cancelSaleProcess = async (
 
     // Restaurar stock en Inventory — filtro de tenant garantizado por la verificación previa
     for (const detail of details) {
-      await Inventory.findOneAndUpdate(
+      const restoredInventory = await Inventory.findOneAndUpdate(
         {
           branch_id: effectiveBranchId,
           product_id: detail.product_id,
           owner_id: ownerId,
         },
         { $inc: { quantity: detail.quantity } },
-        { session, upsert: true },
+        { session, returnDocument: "after" },
       );
+      if (!restoredInventory) {
+        throw new Error(
+          `No existe el inventario del producto ${detail.product_id} en la sucursal.`,
+        );
+      }
     }
 
     sale.status = "cancelled";
@@ -568,7 +603,6 @@ export const cancelSaleProcess = async (
     await sale.save({ session });
 
     await session.commitTransaction();
-    session.endSession();
 
     await bumpBranchCacheVersion(
       "products",
@@ -578,8 +612,11 @@ export const cancelSaleProcess = async (
 
     return sale;
   } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
     throw error;
+  } finally {
+    await session.endSession();
   }
 };
