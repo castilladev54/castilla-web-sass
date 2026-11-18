@@ -522,101 +522,110 @@ export const updateSaleProcess = async (
 export const cancelSaleProcess = async (
   saleId: string,
   ownerId: BusinessOwnerId,
+  actorId: ActorId,
+  session: mongoose.ClientSession,
 ) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  const sale = await Sale.findOne({
+    _id: saleId,
+    business_owner_id: ownerId,
+  }).session(session);
 
-  try {
-    const sale = await Sale.findOne({
-      _id: saleId,
+  if (!sale) {
+    throw new Error("Venta no encontrada o no pertenece a tu negocio.");
+  }
+
+  if (sale.status === "cancelled") {
+    throw new Error("La venta ya ha sido anulada anteriormente.");
+  }
+
+  // Serializar la anulación frente al registro concurrente de abonos.
+  const lockResult = await Sale.updateOne(
+    {
+      _id: sale._id,
       business_owner_id: ownerId,
-    }).session(session);
-    if (!sale)
-      throw new Error("Venta no encontrada o no pertenece a tu negocio.");
-    if (sale.status === "cancelled")
-      throw new Error("La venta ya ha sido anulada anteriormente.");
+    },
+    { $inc: { __v: 1 } },
+    { session },
+  );
 
-    // Serializar la anulación frente al registro concurrente de abonos.
-    const lockResult = await Sale.updateOne(
+  if (lockResult.matchedCount !== 1) {
+    throw new Error("No se pudo bloquear la venta para su anulación.");
+  }
+
+  // No se permite anular ventas con abonos registrados.
+  const existingPayment = await CustomerPayment.exists({
+    sale_id: sale._id,
+    business_owner_id: ownerId,
+  }).session(session);
+
+  if (existingPayment) {
+    throw new Error(
+      "No se puede anular una venta que tiene abonos registrados.",
+    );
+  }
+
+  const effectiveBranchId = sale.branch_id as BranchId;
+
+  const branch = await Branch.findOne({
+    _id: effectiveBranchId,
+    owner_id: ownerId,
+  }).session(session);
+
+  if (!branch) {
+    throw new Error(
+      "La sucursal de la venta original no existe o no pertenece a tu negocio.",
+    );
+  }
+
+  const details = await SaleDetail.find({
+    sale_id: saleId,
+  }).session(session);
+
+  for (const detail of details) {
+    const restoredInventory = await Inventory.findOneAndUpdate(
       {
-        _id: sale._id,
-        business_owner_id: ownerId,
+        branch_id: effectiveBranchId,
+        product_id: detail.product_id,
+        owner_id: ownerId,
       },
-      {
-        $inc: { __v: 1 },
-      },
+      { $inc: { quantity: detail.quantity } },
+      { session, returnDocument: "after" },
+    );
+
+    if (!restoredInventory) {
+      throw new Error(
+        `No existe el inventario del producto ${detail.product_id} en la sucursal.`,
+      );
+    }
+
+    const previousQuantity = Big(restoredInventory.quantity.toString())
+      .minus(detail.quantity.toString());
+
+    await StockMovement.create(
+      [
+        {
+          inventory_id: restoredInventory._id,
+          product_id: detail.product_id,
+          branch_id: effectiveBranchId,
+          owner_id: ownerId,
+          type: StockMovementType.RETURN,
+          quantity_change: detail.quantity,
+          previous_quantity: mongoose.Types.Decimal128.fromString(
+            previousQuantity.toString(),
+          ),
+          new_quantity: restoredInventory.quantity,
+          reference_id: sale._id,
+          created_by: actorId,
+        },
+      ],
       { session },
     );
-
-    if (lockResult.matchedCount !== 1) {
-      throw new Error("No se pudo bloquear la venta para su anulación.");
-    }
-
-    // No se permite anular ventas con abonos registrados.
-    const existingPayment = await CustomerPayment.exists({
-      sale_id: sale._id,
-      business_owner_id: ownerId,
-    }).session(session);
-
-    if (existingPayment) {
-      throw new Error(
-        "No se puede anular una venta que tiene abonos registrados.",
-      );
-    }
-
-    const effectiveBranchId = sale.branch_id as BranchId;
-
-    // Validar que la sucursal original existe y pertenece al negocio
-    const branch = await Branch.findOne({
-      _id: effectiveBranchId,
-      owner_id: ownerId,
-    }).session(session);
-
-    if (!branch) {
-      throw new Error(
-        "La sucursal de la venta original no existe o no pertenece a tu negocio.",
-      );
-    }
-
-    const details = await SaleDetail.find({ sale_id: saleId }).session(session);
-
-    // Restaurar stock en Inventory — filtro de tenant garantizado por la verificación previa
-    for (const detail of details) {
-      const restoredInventory = await Inventory.findOneAndUpdate(
-        {
-          branch_id: effectiveBranchId,
-          product_id: detail.product_id,
-          owner_id: ownerId,
-        },
-        { $inc: { quantity: detail.quantity } },
-        { session, returnDocument: "after" },
-      );
-      if (!restoredInventory) {
-        throw new Error(
-          `No existe el inventario del producto ${detail.product_id} en la sucursal.`,
-        );
-      }
-    }
-
-    sale.status = "cancelled";
-    sale.total_amount = "0" as any;
-    await sale.save({ session });
-
-    await session.commitTransaction();
-
-    await bumpBranchCacheVersion(
-      "products",
-      String(ownerId),
-      String(effectiveBranchId),
-    );
-
-    return sale;
-  } catch (error) {
-    if (session.inTransaction()) {
-      await session.abortTransaction();
-    }
-    throw error;
-  } finally {
-    await session.endSession();
   }
+
+  sale.status = "cancelled";
+  sale.total_amount = "0" as any;
+  await sale.save({ session });
+
+  return sale;
 };
+

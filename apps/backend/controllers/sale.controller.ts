@@ -22,9 +22,12 @@ import {
 import { BranchId, CustomerId } from "../types/brands.js";
 import { withTransactionRetry } from "../utils/transaction-retry.js";
 
-type DecimalLike = {
-  toString(): string;
-} | string | number;
+type DecimalLike =
+  | {
+      toString(): string;
+    }
+  | string
+  | number;
 
 interface SaleLeanForReceivables {
   _id: Types.ObjectId;
@@ -81,7 +84,8 @@ export const createSale = async (req: Request, res: Response): Promise<any> => {
     }
   }
 
-  const { items, payment_method, exchange_rate, customer_id, status } = req.body;
+  const { items, payment_method, exchange_rate, customer_id, status } =
+    req.body;
 
   // Validación Just-In-Time (JIT) de la tasa de cambio
   if (exchange_rate != null) {
@@ -152,7 +156,8 @@ export const createSale = async (req: Request, res: Response): Promise<any> => {
         error.message.includes("Freno de emergencia"))
     )
       status = 400;
-    else if (status === 500 && error.message.includes("no encontrado")) status = 404;
+    else if (status === 500 && error.message.includes("no encontrado"))
+      status = 404;
 
     error.status = status;
     throw error;
@@ -178,12 +183,10 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
     if (isEmployee) {
       // 1. Bloqueo por defecto: Si no hay sucursales asignadas en DB, acceso denegado.
       if (!req.assignedBranches || req.assignedBranches.length === 0) {
-        return res
-          .status(403)
-          .json({
-            success: false,
-            message: "Acceso denegado: Empleado sin sucursales asignadas.",
-          });
+        return res.status(403).json({
+          success: false,
+          message: "Acceso denegado: Empleado sin sucursales asignadas.",
+        });
       }
 
       // 2. Extraemos la sucursal activa de la sesión (header x-branch-id inyectado por Axios)
@@ -191,13 +194,11 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
 
       // 3. Validación criptográfica: Intersección estricta.
       if (!requestedBranch || !req.assignedBranches.includes(requestedBranch)) {
-        return res
-          .status(403)
-          .json({
-            success: false,
-            message:
-              "Acceso denegado: No tienes permiso para consultar esta sucursal o no declaraste contexto de sucursal.",
-          });
+        return res.status(403).json({
+          success: false,
+          message:
+            "Acceso denegado: No tienes permiso para consultar esta sucursal o no declaraste contexto de sucursal.",
+        });
       }
 
       // Asignación directa y singular, sin $in
@@ -462,9 +463,7 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
             : "0.00";
 
         const totalAmount =
-          statusQuery === "pending"
-            ? pendingAmount
-            : completedAmount;
+          statusQuery === "pending" ? pendingAmount : completedAmount;
 
         // Enriquecer todas las ventas a crédito con sus abonos acumulados.
         const typedSales = sales as SaleLeanForReceivables[];
@@ -503,9 +502,7 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
         const enrichedSales = typedSales.map((sale) => {
           if (sale.is_credit_sale !== true) return sale;
 
-          const totalPaid = Big(
-            paymentsMap.get(sale._id.toString()) ?? "0",
-          );
+          const totalPaid = Big(paymentsMap.get(sale._id.toString()) ?? "0");
 
           const saleTotal = Big(sale.total_amount.toString());
           const remaining = saleTotal.minus(totalPaid);
@@ -513,9 +510,7 @@ export const getSales = async (req: Request, res: Response): Promise<any> => {
           return {
             ...sale,
             paid_amount: totalPaid.toFixed(2),
-            remaining_balance: remaining.lte(0)
-              ? "0.00"
-              : remaining.toFixed(2),
+            remaining_balance: remaining.lte(0) ? "0.00" : remaining.toFixed(2),
           };
         });
 
@@ -589,28 +584,31 @@ export const cancelSale = async (
 
     // Restricción estricta: Los empleados no pueden anular ventas
     if (req.userRole === "employee") {
-      res
-        .status(403)
-        .json({
-          success: false,
-          message: "Los empleados no tienen permisos para anular ventas.",
-        });
+      res.status(403).json({
+        success: false,
+        message: "Los empleados no tienen permisos para anular ventas.",
+      });
       return;
     }
 
     const ownerId = req.businessOwnerId;
 
-    const cancelledSale = await withTransactionRetry(() =>
-      cancelSaleProcess(id as string, ownerId),
+    const cancelledSale = await withTransactionRetry((session) =>
+      cancelSaleProcess(id as string, ownerId, req.actorId, session),
     );
 
     // Invalidar caché (ventas, productos y la venta específica)
     await Promise.all([
       bumpCacheVersion("sales", String(ownerId)),
+      bumpBranchCacheVersion(
+        "products",
+        String(ownerId),
+        String(cancelledSale.branch_id),
+      ),
       invalidateCache(
         `sale:${id}:${req.actorId}`,
         `sale:v2:${id}:${req.actorId}`,
-        `sale:v2:${id}:${ownerId}`
+        `sale:v2:${id}:${ownerId}`,
       ),
     ]);
 
@@ -636,12 +634,10 @@ export const updateSale = async (
 
     // Solo dueños pueden editar
     if (req.userRole === "employee") {
-      res
-        .status(403)
-        .json({
-          success: false,
-          message: "Los empleados no tienen permisos para editar ventas.",
-        });
+      res.status(403).json({
+        success: false,
+        message: "Los empleados no tienen permisos para editar ventas.",
+      });
       return;
     }
 
